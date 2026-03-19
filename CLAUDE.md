@@ -26,18 +26,14 @@ This is NOT a game, NOT a traditional genetic algorithm, and NOT a neural networ
 
 ## 2. Development Environment and Constraints
 
-### Current Setup (Phase 1 — Prototyping)
-- **Machine:** MacBook with Apple Silicon (M-series chip)
-- **Language:** Python 3.11+
-- **Framework:** Taichi Lang (`pip install taichi`)
-- **GPU Backend:** Metal (`ti.init(arch=ti.metal)`)
-- **Visualization:** Taichi built-in GUI (`ti.GUI` or `ti.ui.Window`)
-- **No network access required for the simulation itself**
-
-### Future Setup (Phase 2 — Scaling)
+### Current Setup
 - **Machine:** Windows desktop with NVIDIA RTX 5080 (16GB GDDR7, 10,752 CUDA cores, 960 GB/s bandwidth)
-- **GPU Backend:** CUDA (`ti.init(arch=ti.cuda)`)
-- **Potential migration:** Rust + wgpu compute shaders for maximum performance (Phase 3)
+- **Language:** Python 3.12+
+- **Framework:** Taichi Lang (`pip install taichi`)
+- **GPU Backend:** CUDA (`ti.init(arch=ti.cuda)`) — auto-selected via `--backend auto`
+- **Visualization:** Taichi built-in GUI (`ti.GUI`)
+- **Also tested on:** MacBook with Apple Silicon (Metal backend)
+- **Potential migration:** Rust + wgpu compute shaders for maximum performance (future)
 
 ### Critical Cross-Platform Rules
 All code must work identically on both Mac (Metal) and Windows (CUDA) by changing only the `ti.init()` backend. Specifically:
@@ -70,11 +66,12 @@ We are starting with an aggressively simplified version. This is intentional. Th
 |----|------|------|-----------|------------|
 | E  | Energy | Internal fuel. All actions cost energy. Cells die without it. | No (internal only) | 0.02/tick |
 | S  | Structure | Needed to maintain membrane integrity. Consumed by growth and repair. | Yes (slow, 0.01) | 0.001/tick |
-| R  | Replication Material | Required for cell division. Scarce. Drives competition. | Yes (very slow, 0.005) | 0.001/tick |
+| R  | Replication Material | Required for cell division. Scarce. Drives competition. | Yes (slow, 0.03) | 0.001/tick |
 | G  | Signal | Diffusible chemical for communication and chemotaxis. | Yes (fast, 0.3) | 0.05/tick |
 
 **Environmental distribution:**
-- S and R are present in the environment as scattered deposits. Denser in certain areas (procedurally placed clusters). Slowly replenish over time at a configurable rate.
+- S deposits are placed in dim + dark zones only (stepping stones for cells leaving the light zone).
+- R deposits are mostly in dim + dark zones (85%), with a small fraction (15%, configurable via `R_LIGHT_ZONE_FRACTION`) in the light zone to allow initial reproduction before cells evolve chemotaxis.
 - G is only produced by cells. It diffuses outward and decays. Used for trail-following, alarm signals, etc.
 - E is never in the environment directly. It is produced by cells via photosynthesis (light + internal process → E) or by consuming other cells/chemicals.
 
@@ -109,8 +106,8 @@ is_bonded_to: int[4]         — indices of bonded neighbors (or -1).
 [2]  structure_level      — own structure (normalized 0-1)
 [3]  repmat_level         — own replication material (normalized 0-1)
 [4]  membrane_integrity   — own membrane (normalized 0-1)
-[5]  E_gradient_x         — chemical gradient of environmental S, x component
-[6]  E_gradient_y         — chemical gradient of environmental S, y component
+[5]  S_gradient_x         — chemical gradient of environmental S, x component
+[6]  S_gradient_y         — chemical gradient of environmental S, y component
 [7]  R_gradient_x         — gradient of environmental R, x component
 [8]  R_gradient_y         — gradient of environmental R, y component
 [9]  G_gradient_x         — gradient of signal chemical, x component
@@ -120,8 +117,10 @@ is_bonded_to: int[4]         — indices of bonded neighbors (or -1).
 [13] cell_right           — cell to my right? (0 or 1)
 [14] bond_count           — number of active bonds (0-4)
 [15] age_normalized       — age / max_age
+[16] prey_energy          — energy of cell ahead (normalized 0-1, 0 if no cell)
+[17] prey_membrane        — membrane of cell ahead (normalized 0-1, 0 if no cell)
 ```
-**Total: 16 sensory inputs.**
+**Total: 18 sensory inputs.**
 
 **Action outputs (from the neural network):**
 ```
@@ -142,14 +141,14 @@ is_bonded_to: int[4]         — indices of bonded neighbors (or -1).
 
 For the prototype, each genome is a **fixed-size feedforward neural network:**
 
-- **Architecture:** 16 inputs → 32 hidden (tanh activation) → 32 hidden (tanh activation) → 10 outputs (sigmoid activation)
-- **Total parameters:** 16×32 + 32 + 32×32 + 32 + 32×10 + 10 = 1,898 floats per genome.
-- **Storage:** A Taichi field of shape `(max_genomes, 1898)` stores all unique genomes. Each cell references a genome by index.
+- **Architecture:** 18 inputs → 32 hidden (tanh activation) → 32 hidden (tanh activation) → 10 outputs (sigmoid activation)
+- **Total parameters:** 18×32 + 32 + 32×32 + 32 + 32×10 + 10 = 1,994 floats per genome.
+- **Storage:** A Taichi field of shape `(max_genomes, 1994)` stores all unique genomes. Each cell references a genome by index.
 
 **This is deliberately simpler than the full spec's variable-length regulatory graph.** The fixed-size network is sufficient for stages 1-3 (chemotaxis, predation, basic cooperation). We will upgrade to a more expressive genome representation once we've validated the evolutionary dynamics.
 
-**Mutation operators (applied when a cell divides):**
-- **Weight perturbation:** Each weight has a probability of 0.01 of being perturbed by Gaussian noise (σ = 0.1).
+**Mutation operators (applied on GPU when a cell divides):**
+- **Weight perturbation:** Each weight has a probability of 0.03 of being perturbed by Gaussian noise (σ = 0.1).
 - **Weight reset:** Each weight has a probability of 0.001 of being reset to a random value in [-1, 1].
 - **Node knockout:** Each hidden node has a probability of 0.0005 of having all its outgoing weights zeroed (effectively disabling it). This allows structural simplification.
 
@@ -160,23 +159,25 @@ For the prototype, each genome is a **fixed-size feedforward neural network:**
 This is the most critical system to get right. If the energy balance is wrong, nothing else matters.
 
 **Energy income:**
-- **Photosynthesis:** A cell in a lit area gains `light_intensity * photosynthesis_rate` energy per tick. Default photosynthesis_rate: 0.5. This is the primary energy source.
-- **Consuming chemicals:** The "eat" action absorbs environmental S and R. These have a small energy value when consumed (0.1 E per unit of S, 0.2 E per unit of R).
+- **Photosynthesis:** A cell in a lit area gains `light_intensity * photosynthesis_rate` energy per tick. This is the primary energy source. Passive — does not require neural net activation.
+- **Consuming chemicals:** The "eat" action absorbs environmental S and R (capped by `EAT_ABSORB_CAP` per tick). Passive eating also occurs at a lower rate (`PASSIVE_EAT_CAP`).
 - **Predation:** The "attack" action damages another cell's membrane. If a cell dies, its internal chemicals spill into the environment and can be consumed by nearby cells. This is energetically viable but risky.
 
-**Energy costs:**
+**Energy costs (see `config.py` for current tuned values):**
 ```
-Existing (basal metabolism):     0.05 per tick
-Moving:                          0.3 per move
-Turning:                         0.02 per turn
-Eating:                          0.02 per eat action
-Emitting signal:                 0.1 per emission
-Dividing:                        20.0 per division (plus requires R >= 5.0)
-Bonding maintenance:             0.05 per bond per tick
-Attacking:                       0.5 per attack
-Repairing:                       0.1 per repair action (consumes 0.5 S)
-Network evaluation:              0.01 per tick (genome complexity cost)
+Existing (basal metabolism):     BASAL_METABOLISM per tick
+Moving:                          MOVE_COST per move
+Turning:                         TURN_COST per turn
+Eating:                          EAT_COST per eat action
+Emitting signal:                 SIGNAL_COST per emission
+Dividing:                        DIVIDE_COST per division (plus requires R >= DIVIDE_R_COST)
+Bonding maintenance:             BOND_COST per bond per tick
+Attacking:                       ATTACK_COST per attack
+Repairing:                       REPAIR_COST per repair action (consumes REPAIR_S_COST S)
+Network evaluation:              NETWORK_COST per tick (genome complexity cost)
 ```
+
+**Note:** These values have been iteratively tuned. The current values in `config.py` are the authoritative source. Key tuning insight: the economy must be tight enough that cells can't stockpile indefinitely (forces competition), but loose enough that random initial genomes survive the first crash (allows evolution to bootstrap).
 
 **Key constraint: energy is conserved.** The sun (light) and chemical deposits are the only external inputs. Everything else is transformation. The ecosystem has a carrying capacity determined by the total energy input rate.
 
@@ -187,7 +188,7 @@ Network evaluation:              0.01 per tick (genome complexity cost)
 
 ### 3.6 Cell Lifecycle
 
-1. **Spawn:** At simulation start, seed cells are placed randomly in the light zone. Each gets a random genome, 50% energy, 50% structure, 10% replication material.
+1. **Spawn:** At simulation start, seed cells are placed randomly in the light zone. Each gets a random genome with near-zero weights and biased output layer (see `SEED_WEIGHT_SIGMA`, `ATTACK_BIAS` in config).
 2. **Each tick, for each living cell:**
    a. Compute sensory inputs from environment and internal state.
    b. Evaluate neural network: inputs → hidden → hidden → outputs.
@@ -204,11 +205,13 @@ Network evaluation:              0.01 per tick (genome complexity cost)
 
 ### 3.7 Bonding (Multicellularity Foundation)
 
-- A cell can bond with an adjacent cell if both have their "bond" output active in the same tick.
-- Bonded cells share 10% of their chemicals with each bonded neighbor each tick (automatic, costs a small amount of energy).
+- A cell can bond with an adjacent cell if both have their "bond" output active in the same tick. Uses two-phase claim system (atomic_min) for conflict resolution.
+- Bonded cells share chemicals with each bonded neighbor each tick (flow from high to low concentration). Costs `BOND_COST` energy per bond per tick.
 - Either cell can break the bond unilaterally via the "unbond" output.
-- Bonded cells cannot be pushed apart by movement (they move as a unit, or not at all if the unit can't fit).
+- **Bonded group movement:** Bonded cells move as a unit. The lowest-index cell in the group that fires "move" is the leader — its facing direction determines the group's movement. All bonded partners shift by the same (dx, dy). If any partner's target is blocked (occupied by a non-group-member), the entire move fails. Implementation: `cell/bonding.py::process_bonded_movement()`.
 - Bond status is visible as a sensory input (bond_count).
+
+**Current status (as of Stage 3 tuning):** Bonded clusters of 40-70+ cells are forming. Topologies are primarily pairs (57%), chains (28%), and meshes (8%). ~12-20% of cells are bonded. Clusters are mostly stationary — coordinated group movement is rare because facing alignment within clusters is low.
 
 ### 3.8 Visualization
 
@@ -230,8 +233,8 @@ cybercell/
 ├── CLAUDE.md                  ← This file (project brief)
 ├── README.md                  ← Public-facing project description
 ├── requirements.txt           ← Python dependencies
-├── config.py                  ← All configurable parameters (world size, energy costs, mutation rates, etc.)
-├── main.py                    ← Entry point. Initializes simulation, runs main loop.
+├── config.py                  ← All configurable parameters (single source of truth)
+├── main.py                    ← Entry point. Auto backend selection, CLI args, main loop.
 ├── world/
 │   ├── __init__.py
 │   ├── grid.py                ← World grid, terrain zones, light model, day/night cycle.
@@ -239,35 +242,43 @@ cybercell/
 ├── cell/
 │   ├── __init__.py
 │   ├── cell_state.py          ← Cell state fields (position, energy, genome_id, etc.)
-│   ├── genome.py              ← Genome table, network evaluation kernel, mutation operators.
+│   ├── genome.py              ← Genome table, network evaluation kernel, GPU-side mutations.
 │   ├── sensing.py             ← Compute sensory inputs for all cells (parallel kernel).
-│   ├── actions.py             ← Execute cell actions (move, eat, divide, attack, bond, etc.)
-│   └── lifecycle.py           ← Birth, death, aging, division logic.
+│   ├── actions.py             ← Execute cell actions (move, eat, divide, attack, etc.)
+│   ├── bonding.py             ← Bond formation, unbonding, chemical sharing, group movement.
+│   └── lifecycle.py           ← Photosynthesis, metabolism, death, chemical spillage.
 ├── simulation/
 │   ├── __init__.py
-│   ├── engine.py              ← Main simulation tick: update environment → sense → think → act → resolve.
-│   └── spawner.py             ← Initial cell seeding and periodic reseeding.
+│   ├── engine.py              ← Main simulation tick: environment → sense → think → act → resolve.
+│   ├── spawner.py             ← Initial cell seeding.
+│   └── checkpoint.py          ← Save/restore simulation state for backend switching.
 ├── visualization/
 │   ├── __init__.py
 │   └── renderer.py            ← Taichi GUI rendering, color mapping, overlays, stats display.
 ├── analysis/
 │   ├── __init__.py
-│   ├── metrics.py             ← Population stats, diversity measures, complexity tracking.
-│   └── logger.py              ← Periodic snapshots of simulation state for later analysis.
+│   ├── metrics.py             ← Population stats, diversity, spatial snapshots.
+│   ├── logger.py              ← Periodic metric + spatial snapshots to disk.
+│   ├── study.py               ← Evolutionary dynamics analysis and phase detection.
+│   ├── spatial_analysis.py    ← Spatial structure detection (clusters, lines, density).
+│   ├── bonding_analysis.py    ← Bonding topology, coordination, persistence analysis.
+│   └── output/{timestamp}/    ← Versioned analysis outputs (one folder per run).
+├── runs/{timestamp}/          ← Simulation data (metrics.jsonl + spatial/ snapshots).
 └── tests/
     ├── test_chemistry.py      ← Verify diffusion conserves mass, decay works correctly.
     ├── test_energy.py         ← Verify energy conservation (total energy in system is bounded).
     ├── test_genome.py         ← Verify network evaluation, mutation produces valid genomes.
-    └── test_lifecycle.py      ← Verify birth/death/division mechanics.
+    ├── test_lifecycle.py      ← Verify birth/death/division mechanics.
+    └── test_predation.py      ← Verify attack, bonding, death spillage, group movement.
 ```
 
 ---
 
 ## 5. Implementation Order
 
-Build and test in this exact order. Do not skip ahead. Each step depends on the previous one being correct.
+Steps 1-6 are complete. Step 7 is ongoing.
 
-### Step 1: World and Chemistry (Estimated: 1-2 days)
+### Step 1: World and Chemistry ✅
 - Implement the grid with three zones.
 - Implement the light model (zone-based intensity + day/night sinusoidal cycle).
 - Implement the 4 chemical fields with diffusion and decay.
@@ -275,7 +286,7 @@ Build and test in this exact order. Do not skip ahead. Each step depends on the 
 - Write visualization: show the grid with chemical heatmaps and light overlay.
 - **Test:** Run diffusion for 10,000 ticks. Verify chemicals spread and decay correctly. Verify light cycle works. Visually inspect that the world looks sensible.
 
-### Step 2: Cells — Static (Estimated: 1-2 days)
+### Step 2: Cells — Static ✅
 - Implement cell state fields.
 - Place 1,000 seed cells randomly in the light zone.
 - Implement basal metabolism (energy drain per tick) and death from energy depletion.
@@ -284,7 +295,7 @@ Build and test in this exact order. Do not skip ahead. Each step depends on the 
 - **Do NOT implement the neural network yet.** Hard-code cell behavior: all cells photosynthesize and eat. No movement, no reproduction.
 - **Test:** Run for 10,000 ticks. Do cells survive in the light zone? Do they die in the dark zone? Is the energy balance sustainable — cells should reach an equilibrium, not grow forever or die out.
 
-### Step 3: Genome and Neural Network (Estimated: 2-3 days)
+### Step 3: Genome and Neural Network ✅
 - Implement the genome table and network evaluation kernel.
 - Replace hard-coded behavior with network-driven behavior.
 - Seed initial genomes with small random weights.
@@ -292,7 +303,7 @@ Build and test in this exact order. Do not skip ahead. Each step depends on the 
 - Implement all 10 action outputs with their costs and effects.
 - **Test:** Cells will initially behave randomly (random genomes). Most will die quickly. That's expected. Verify that the network evaluation runs correctly (outputs are in [0,1] range, inputs are normalized properly).
 
-### Step 4: Reproduction and Mutation (Estimated: 1-2 days)
+### Step 4: Reproduction and Mutation ✅
 - Implement cell division with energy/material requirements.
 - Implement genome mutation on division.
 - Implement genome table management (allocate new genomes, track unique genomes).
@@ -302,7 +313,7 @@ Build and test in this exact order. Do not skip ahead. Each step depends on the 
   - Do you see genome diversification? (Multiple distinct lineages with different behaviors.)
   - **Most importantly: do cells evolve to move toward food?** This is chemotaxis, the first non-trivial evolved behavior. If you see it, the core system is working.
 
-### Step 5: Predation and Interaction (Estimated: 1-2 days)
+### Step 5: Predation and Interaction ✅
 - Implement the "attack" action (damages adjacent cell's membrane).
 - Implement chemical spillage on death (dead cell's internals go to environment).
 - Implement bonding (mutual bond, chemical sharing, movement constraints).
@@ -311,7 +322,7 @@ Build and test in this exact order. Do not skip ahead. Each step depends on the 
   - Defensive behaviors: cells that flee from approaching cells.
   - Clustering: bonded groups that share resources.
 
-### Step 6: Metrics and Analysis (Estimated: 1 day)
+### Step 6: Metrics and Analysis ✅
 - Implement population tracking, genome diversity measures, behavioral classification.
 - Implement periodic state snapshots (save to disk for offline analysis).
 - Implement a lineage tracker (which genomes descended from which).
@@ -351,14 +362,14 @@ def diffuse(src: ti.template(), dst: ti.template(), rate: float):
         # Wrapping: (i + 1) % grid_size
 ```
 
-**Network evaluation (batched by genome):**
-For efficiency, evaluate all cells sharing the same genome simultaneously. The weights are read once from the genome table, and all cells with that genome_id are processed together. This is the biggest performance optimization available and should be implemented from the start.
+**Network evaluation:**
+Each cell evaluates its neural network independently in a parallel kernel. Genome weights are read from the genome table by genome_id. Note: batching by genome was considered but every cell has a unique genome after a few generations (mutation on every division), so batching provides no benefit.
 
 ### Avoiding Common Pitfalls
 
 1. **Random number generation in Taichi:** Use `ti.random()` inside kernels. Do not use Python's `random` module inside `@ti.kernel` functions.
 
-2. **Race conditions in cell movement:** Two cells cannot move to the same grid cell. Resolve by processing moves in a random order (shuffle cell indices each tick) and checking occupancy before committing.
+2. **Race conditions in cell movement:** Two cells cannot move to the same grid cell. Resolved via two-phase intent-claim system: phase 1 declares intent and claims target with `atomic_min`, phase 2 only the winner moves. Bonded cells use a separate group movement system with leader election. See `cell/actions.py` and `cell/bonding.py`.
 
 3. **Division placement:** When a cell divides, scan the 4 adjacent cells for an empty one. If none is empty, division fails and the cell retains its energy/materials. This creates density-dependent reproduction pressure.
 
@@ -370,73 +381,39 @@ For efficiency, evaluate all cells sharing the same genome simultaneously. The w
 
 ## 7. Configuration Defaults
 
-All of these should be defined in `config.py` as module-level constants. Every parameter should be tunable without changing any other code.
+All parameters are defined in `config.py` as module-level constants. **`config.py` is the single source of truth** — always check it for current values, as parameters are iteratively tuned and the values below may be stale.
+
+Key parameters that have been tuned from their original spec values (and why):
 
 ```python
-# World
-GRID_WIDTH = 500
-GRID_HEIGHT = 500
-LIGHT_ZONE_END = 166          # x < 166 = bright
-DIM_ZONE_END = 333            # 166 <= x < 333 = dim
-DAY_LENGTH = 1000             # ticks per day/night cycle
-LIGHT_BRIGHT = 1.0
-LIGHT_DIM = 0.3
-LIGHT_DARK = 0.0
+# Economy (tightened to force competition — original was too generous)
+BASAL_METABOLISM = 0.08       # was 0.05; prevents infinite energy stockpiling
+PHOTOSYNTHESIS_RATE = 0.45    # was 0.5; tighter energy budget
+MOVE_COST = 0.1               # was 0.3; cheaper movement encourages chemotaxis
+INITIAL_ENERGY = 35.0          # was 25.0; more runway to survive initial crash
 
-# Chemistry
-DIFFUSION_RATE_S = 0.01
-DIFFUSION_RATE_R = 0.005
-DIFFUSION_RATE_G = 0.3
-DECAY_RATE_E = 0.02
-DECAY_RATE_S = 0.001
-DECAY_RATE_R = 0.001
-DECAY_RATE_G = 0.05
-DEPOSIT_REPLENISH_RATE = 0.001
-NUM_DEPOSITS_S = 200
-NUM_DEPOSITS_R = 100
+# Bonding (made affordable so evolution can experiment)
+BOND_COST = 0.01              # was 0.05; old value was 100% of basal metabolism per bond
 
-# Cells
-MAX_CELLS = 50000
-MAX_GENOMES = 50000
-INITIAL_CELL_COUNT = 1000
-MAX_CELL_AGE = 5000
-INITIAL_ENERGY = 25.0
-INITIAL_STRUCTURE = 25.0
-INITIAL_REPMAT = 5.0
+# Predation (deadlier attacks, arms race pressure)
+ATTACK_COST = 0.3             # was 0.5; cheaper to attack
+ATTACK_MEMBRANE_DAMAGE = 8.0  # was 10.0; tuned with other combat params
 
-# Energy costs
-BASAL_METABOLISM = 0.05
-MOVE_COST = 0.3
-TURN_COST = 0.02
-EAT_COST = 0.02
-SIGNAL_COST = 0.1
-DIVIDE_COST = 20.0
-DIVIDE_R_COST = 5.0
-BOND_COST = 0.05
-ATTACK_COST = 0.5
-REPAIR_COST = 0.1
-NETWORK_COST = 0.01
+# Resources (scarcer R drives competition for reproduction)
+NUM_DEPOSITS_R = 200          # was 100 in spec, tuned up/down during development
+DEPOSIT_REPLENISH_RATE = 0.012 # was 0.001 in spec; tuned for viable reproduction
+DIFFUSION_RATE_R = 0.03       # was 0.005; faster R diffusion for reachability
+R_LIGHT_ZONE_FRACTION = 0.15  # NEW: 15% of R deposits in light zone
 
-# Energy income
-PHOTOSYNTHESIS_RATE = 0.5
-S_ENERGY_VALUE = 0.1
-R_ENERGY_VALUE = 0.2
-ATTACK_MEMBRANE_DAMAGE = 10.0
+# Mutation (higher rate for faster adaptation)
+MUTATION_RATE_PERTURB = 0.03  # was 0.01; faster exploration of weight space
 
-# Genome
-NETWORK_HIDDEN_SIZE = 32
-MUTATION_RATE_PERTURB = 0.01
-MUTATION_SIGMA = 0.1
-MUTATION_RATE_RESET = 0.001
-MUTATION_RATE_KNOCKOUT = 0.0005
-
-# Reproduction
-PARENT_RESOURCE_SHARE = 0.6   # parent keeps 60%
-DAUGHTER_RESOURCE_SHARE = 0.4
-
-# Bonding
-BOND_SHARE_RATE = 0.1         # 10% of chemicals shared per tick per bond
+# Chemical income
+S_ENERGY_VALUE = 0.3          # was 0.1; eating is more rewarding
+R_ENERGY_VALUE = 0.5          # was 0.2; incentivizes foraging for R
 ```
+
+See `config.py` for the complete list including all unchanged defaults.
 
 ---
 
@@ -480,25 +457,27 @@ These are documented here so architectural decisions in the prototype don't acci
 
 ## 9. Success Criteria
 
-### Stage 1 Success (first few hours of sim time):
+### Stage 1 Success ✅ ACHIEVED
 - Stable autotroph populations form in the light zone.
 - Chemical deposits get consumed and cycle through the ecosystem.
 - Day/night cycle creates visible behavioral shifts (cells are more active during day).
 
-### Stage 2 Success (tens of thousands of ticks):
-- Cells evolve chemotaxis — directed movement toward resources.
-- Multiple distinct survival strategies coexist (e.g., mobile foragers vs. stationary photosynthesizers).
-- Population reaches a stable carrying capacity.
+### Stage 2 Success ✅ ACHIEVED
+- Cells evolve chemotaxis — directed movement toward resources (48-58% of cells moving).
+- Multiple distinct survival strategies coexist (sessile photosynthesizers vs. mobile foragers vs. boundary colonies).
+- Population reaches a stable carrying capacity (~5K-11K depending on params).
 
-### Stage 3 Success (hundreds of thousands of ticks):
-- Heterotrophs emerge — cells that attack and consume other cells.
-- Predator-prey dynamics create oscillating populations.
-- Defensive behaviors evolve (fleeing, clustering).
+### Stage 3 Success ✅ PARTIALLY ACHIEVED
+- Heterotrophs emerge — cells that attack and consume other cells (~1-2% attacking).
+- Attack deaths account for significant mortality (187K-239K attack deaths per run).
+- Defensive clustering via bonding (12-20% of cells bonded, clusters up to 70+ cells).
+- ⚠️ Not yet observed: clear predator-prey population oscillations or evolved flee behavior.
 
-### Stage 4 Success (millions of ticks):
-- Bonded cell clusters persist and confer survival advantage.
-- Cells within clusters show differentiated behavior (some gather food, others defend).
-- This is the first sign of multicellularity and is a major scientific result.
+### Stage 4 Success — IN PROGRESS
+- Bonded cell clusters persist (pairs, chains, trees, meshes up to 70 cells).
+- ⚠️ Not yet observed: differentiated behavior within clusters (cells still run independent neural networks).
+- **Key bottleneck:** Bonds share chemicals but not neural signals. Cells can't coordinate decisions. For differentiation, cells need a way to influence each other's neural inputs through bonds (see Phase 3 in roadmap).
+- **Key observation:** Cluster topology is primarily parent-offspring chains. Every cell in a cluster has a unique genome (all mutants of a common ancestor). Facing coordination is weak (~42% of clusters show any alignment), so group movement is rare.
 
 ---
 
