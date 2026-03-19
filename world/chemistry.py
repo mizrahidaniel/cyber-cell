@@ -126,6 +126,15 @@ def swap_buffers():
     _current_buffer = 1 - _current_buffer
 
 
+def get_current_buffer() -> int:
+    return _current_buffer
+
+
+def set_current_buffer(val: int):
+    global _current_buffer
+    _current_buffer = val
+
+
 def _place_clustered_deposits(rng, num_deposits, x_field, y_field,
                               x_min, x_max, num_clusters=None):
     """Place deposits in clusters within the given x-range."""

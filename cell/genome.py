@@ -34,6 +34,10 @@ sensory_inputs = ti.field(dtype=ti.f32, shape=(MAX_CELLS, NUM_INPUTS))
 # Mutation flag for newly born cells
 needs_mutation = ti.field(dtype=ti.i32, shape=(MAX_CELLS,))
 
+# Pending mutation list: cell indices that need mutation (filled by GPU, consumed by GPU)
+_pending_mutations = ti.field(dtype=ti.i32, shape=(MAX_CELLS,))
+_pending_count = ti.field(dtype=ti.i32, shape=())
+
 H = NETWORK_HIDDEN_SIZE
 
 
@@ -135,91 +139,105 @@ def deallocate_genome_python(idx: int):
     genome_count[None] = genome_count[None] - 1
 
 
-def mutate_genome(parent_genome_id: int, rng: np.random.Generator,
-                  all_weights: np.ndarray = None) -> tuple[np.ndarray, bool]:
-    """Apply mutation operators to a copy of the parent genome.
+@ti.func
+def _box_muller_normal() -> ti.f32:
+    """Generate a standard normal random number on GPU using Box-Muller transform."""
+    u1 = ti.max(1e-7, ti.random(ti.f32))  # avoid log(0)
+    u2 = ti.random(ti.f32)
+    return ti.sqrt(-2.0 * ti.log(u1)) * ti.cos(2.0 * 3.14159265358979 * u2)
 
-    Returns (mutated_weights, changed) where changed indicates if any mutation occurred.
-    If all_weights is provided, reads from the numpy array instead of per-element field access.
+
+@ti.kernel
+def _collect_pending_mutations():
+    """Collect indices of cells needing mutation into a compact list."""
+    _pending_count[None] = 0
+    for i in range(MAX_CELLS):
+        if needs_mutation[i] == 1:
+            idx = ti.atomic_add(_pending_count[None], 1)
+            _pending_mutations[idx] = i
+
+
+@ti.kernel
+def _apply_mutations_gpu():
+    """Apply mutation operators entirely on GPU — no CPU transfer needed.
+
+    For each cell needing mutation:
+    1. Allocate a new genome slot (sequential via atomic)
+    2. Copy parent weights to new genome
+    3. Apply perturbation, reset, and knockout mutations using ti.random()
+    4. Update cell's genome_id and ref counts
     """
-    if all_weights is not None:
-        weights = all_weights[parent_genome_id].copy()
-    else:
-        weights = np.zeros(GENOME_SIZE, dtype=np.float32)
+    for idx in range(_pending_count[None]):
+        cell_idx = _pending_mutations[idx]
+        parent_gid = cell_genome_id[cell_idx]
+
+        # Allocate new genome slot
+        slot_idx = ti.atomic_sub(genome_free_count[None], 1) - 1
+        if slot_idx < 0:
+            # Allocation failed — undo and keep parent genome
+            ti.atomic_add(genome_free_count[None], 1)
+            ti.atomic_add(genome_ref_count[parent_gid], 1)
+            needs_mutation[cell_idx] = 0
+            continue
+
+        new_gid = genome_free_list[slot_idx]
+        ti.atomic_add(genome_count[None], 1)
+
+        # Copy parent weights and apply mutations
+        changed = 0
         for w in range(GENOME_SIZE):
-            weights[w] = float(genome_weights[parent_genome_id, w])
+            val = genome_weights[parent_gid, w]
 
-    changed = False
+            # Weight perturbation
+            if ti.random(ti.f32) < MUTATION_RATE_PERTURB:
+                val += _box_muller_normal() * MUTATION_SIGMA
+                changed = 1
 
-    # Weight perturbation
-    perturb_mask = rng.random(GENOME_SIZE) < MUTATION_RATE_PERTURB
-    if perturb_mask.any():
-        weights[perturb_mask] += rng.normal(0.0, MUTATION_SIGMA,
-                                            size=int(perturb_mask.sum())).astype(np.float32)
-        changed = True
+            # Weight reset
+            if ti.random(ti.f32) < MUTATION_RATE_RESET:
+                val = ti.random(ti.f32) * 2.0 - 1.0  # uniform [-1, 1]
+                changed = 1
 
-    # Weight reset
-    reset_mask = rng.random(GENOME_SIZE) < MUTATION_RATE_RESET
-    if reset_mask.any():
-        weights[reset_mask] = rng.uniform(-1.0, 1.0,
-                                          size=int(reset_mask.sum())).astype(np.float32)
-        changed = True
+            genome_weights[new_gid, w] = val
 
-    # Node knockout: zero all outgoing weights of a hidden node
-    # Hidden layer 1 nodes -> their outputs go to layer 2
-    for h in range(NETWORK_HIDDEN_SIZE):
-        if rng.random() < MUTATION_RATE_KNOCKOUT:
-            # Zero column h in W2 (weights from hidden1[h] to all hidden2 nodes)
-            for h2 in range(NETWORK_HIDDEN_SIZE):
-                weights[B1_END + h2 * NETWORK_HIDDEN_SIZE + h] = 0.0
-            changed = True
+        # Node knockout: hidden layer 1 → layer 2
+        for h in range(H):
+            if ti.random(ti.f32) < MUTATION_RATE_KNOCKOUT:
+                for h2 in range(H):
+                    genome_weights[new_gid, B1_END + h2 * H + h] = 0.0
+                changed = 1
 
-    # Hidden layer 2 nodes -> their outputs go to layer 3
-    for h in range(NETWORK_HIDDEN_SIZE):
-        if rng.random() < MUTATION_RATE_KNOCKOUT:
-            # Zero column h in W3 (weights from hidden2[h] to all output nodes)
-            for o in range(NUM_OUTPUTS):
-                weights[B2_END + o * NETWORK_HIDDEN_SIZE + h] = 0.0
-            changed = True
+        # Node knockout: hidden layer 2 → outputs
+        for h in range(H):
+            if ti.random(ti.f32) < MUTATION_RATE_KNOCKOUT:
+                for o in range(NUM_OUTPUTS):
+                    genome_weights[new_gid, B2_END + o * H + h] = 0.0
+                changed = 1
 
-    return weights, changed
-
-
-def process_mutations(rng: np.random.Generator):
-    """Process mutations for all newly born cells (Python-side loop)."""
-    mutation_flags = needs_mutation.to_numpy()
-    birth_indices = np.where(mutation_flags == 1)[0]
-
-    if len(birth_indices) == 0:
-        return
-
-    # Batch read: pull all genome weights into numpy once
-    all_weights = genome_weights.to_numpy()
-    genome_ids = cell_genome_id.to_numpy()
-    new_genome_rows = []  # (slot, weights) pairs for batch write
-
-    for idx in birth_indices:
-        parent_gid = int(genome_ids[idx])
-        weights, changed = mutate_genome(parent_gid, rng, all_weights=all_weights)
-
-        if changed:
-            new_gid = allocate_genome_python()
-            if new_gid >= 0:
-                all_weights[new_gid] = weights
-                new_genome_rows.append(new_gid)
-                genome_ref_count[new_gid] = 1
-                genome_ref_count[parent_gid] -= 1
-                cell_genome_id[idx] = new_gid
-                genome_ids[idx] = new_gid
-            # If allocation failed, keep parent genome
+        if changed == 0:
+            # No mutation occurred — free the new genome and share parent's
+            ti.atomic_add(genome_free_count[None], 1)
+            genome_free_list[slot_idx] = new_gid
+            ti.atomic_sub(genome_count[None], 1)
+            ti.atomic_add(genome_ref_count[parent_gid], 1)
         else:
-            genome_ref_count[parent_gid] += 1
+            # Mutation occurred — update refs
+            genome_ref_count[new_gid] = 1
+            ti.atomic_sub(genome_ref_count[parent_gid], 1)
+            cell_genome_id[cell_idx] = new_gid
 
-        needs_mutation[idx] = 0
+        needs_mutation[cell_idx] = 0
 
-    # Batch write: push all modified genome weights back at once
-    if new_genome_rows:
-        genome_weights.from_numpy(all_weights)
+
+def process_mutations(rng=None):
+    """Process mutations for all newly born cells (GPU-side).
+
+    The rng parameter is kept for API compatibility but is unused —
+    all randomness now comes from ti.random() on the GPU.
+    """
+    _collect_pending_mutations()
+    if _pending_count[None] > 0:
+        _apply_mutations_gpu()
 
 
 @ti.kernel
@@ -236,15 +254,8 @@ def garbage_collect_genomes():
     """Free genomes with zero references."""
     _recount_genome_refs()
     ref_counts = genome_ref_count.to_numpy()
-    genome_ct = genome_count[None]
 
-    for g in range(MAX_GENOMES):
-        if ref_counts[g] == 0 and g < genome_ct:
-            # Check if this genome was ever allocated (non-zero in the table)
-            # We only deallocate if it's tracked as active
-            pass  # Simplified: GC runs on recount, dead genomes auto-freed
-
-    # More precise: rebuild free list from ref counts
+    # Rebuild free list from ref counts
     free_indices = []
     active_count = 0
     for g in range(MAX_GENOMES):

@@ -9,15 +9,21 @@ Built with [Taichi Lang](https://github.com/taichi-dev/taichi) for GPU-accelerat
 ```bash
 pip install -r requirements.txt
 
-# Run with visualization
+# Run with visualization (auto-selects fastest backend on first run)
 python main.py
 
 # Run headless (for long evolution runs)
 python main.py --headless --ticks 100000 --log-interval 5000
 
-# Run with specific backend
+# Force a specific backend
 python main.py --backend cuda    # Windows/NVIDIA
-python main.py --backend cpu     # macOS (default, see Known Issues)
+python main.py --backend cpu     # Any platform
+
+# Re-benchmark backends (e.g. after hardware changes)
+python main.py --rebenchmark
+
+# Resume from a checkpoint
+python main.py --resume path/to/checkpoint.npz
 ```
 
 ### Visualization Controls
@@ -29,7 +35,8 @@ python main.py --backend cpu     # macOS (default, see Known Issues)
 | `3` | Replication (R) chemical heatmap (red) |
 | `4` | Signal (G) chemical heatmap (blue) |
 | `Space` | Pause / unpause |
-| `F` | Fast-forward (10x, skips rendering) |
+| `Up` | Increase simulation speed (1x, 2x, 5x, 10x, 25x, 50x ticks/frame) |
+| `Down` | Decrease simulation speed |
 | `Esc` | Quit |
 
 ## How It Works
@@ -165,6 +172,7 @@ cybercell/
 │   └── lifecycle.py           # Photosynthesis, passive eating, metabolism, death
 ├── simulation/
 │   ├── engine.py              # Tick loop: environment → sense → think → act → resolve
+│   ├── checkpoint.py          # Save/load full simulation state for resume & backend switching
 │   └── spawner.py             # Initial cell seeding
 ├── visualization/
 │   └── renderer.py            # ti.GUI rendering, overlays, stats
@@ -197,7 +205,7 @@ Each simulation tick executes these steps in order:
 13. `process_repair` — spend S to fix membrane
 14. `process_attack` — damage adjacent cell
 15. `process_divide` (phase 1 + 2) — claim targets, resolve, create daughters
-16. `process_mutations` — apply mutations to new genomes (Python loop)
+16. `process_mutations` — apply mutations to new genomes (GPU kernel)
 17. `apply_metabolism` — deduct energy, age cells, apply membrane decay
 18. `check_death` — kill depleted cells, spill chemicals
 19. `swap_buffers` — toggle diffusion double-buffer
@@ -242,11 +250,22 @@ All parameters are in `config.py`. Key tuning levers if evolution stalls:
 | Genomes converge | Increase `MUTATION_RATE_PERTURB` |
 | Genomes dissolve into noise | Decrease `MUTATION_RATE_PERTURB` |
 
+## Performance
+
+The `--backend auto` mode (default) benchmarks available backends on first run and caches the result.
+
+| Platform | Backend | Ticks/sec (~1K cells) |
+|----------|---------|----------------------|
+| Windows RTX 5080 | CUDA | ~900 |
+| Windows RTX 5080 | CPU | ~450 |
+| macOS M2 Pro | CPU | ~50 |
+
+CUDA performance is roughly constant across population sizes (all mutation/evolution logic runs on GPU). Use `--rebenchmark` after significant config changes.
+
 ## Known Issues
 
-- **macOS 15 + Apple Silicon**: Taichi's Metal GPU backend crashes WindowServer ([taichi-dev/taichi#8775](https://github.com/taichi-dev/taichi/issues/8775)). Use `--backend cpu` (the default). Simulation runs fine, just slower than GPU.
+- **macOS 15 + Apple Silicon**: Taichi's Metal GPU backend crashes WindowServer ([taichi-dev/taichi#8775](https://github.com/taichi-dev/taichi/issues/8775)). Use `--backend cpu`. Simulation runs fine, just slower than GPU.
 - **Bonding** (actions 6-7) is parsed but not yet functional. The outputs are read but have no effect.
-- **Performance**: ~45-50 ticks/second on CPU with ~1000 cells. Scales linearly with population. Moving to CUDA on Windows should give 10-50x speedup.
 
 ## Requirements
 

@@ -3,3 +3,6 @@ __pycache__/
 runs/
 *.egg-info/
 .claude/
+.venv/
+.backend_cache.json
+.switch_checkpoint.npz

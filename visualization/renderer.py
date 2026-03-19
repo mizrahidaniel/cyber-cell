@@ -99,13 +99,20 @@ def render_chemical_overlay(chem: ti.template(), channel: ti.i32):
 
 
 class Renderer:
+    # Ticks per frame for each speed level (index 0 = normal)
+    SPEED_LEVELS = [1, 2, 5, 10, 25, 50]
+
     def __init__(self):
         self.gui = ti.GUI("CyberCell",
                           res=(GRID_WIDTH * GUI_SCALE, GRID_HEIGHT * GUI_SCALE),
                           fast_gui=False)
         self.overlay_mode = 0
         self.paused = False
-        self.fast_forward = False
+        self.speed_index = 0  # index into SPEED_LEVELS
+
+    @property
+    def ticks_per_frame(self) -> int:
+        return self.SPEED_LEVELS[self.speed_index]
 
     def handle_input(self) -> bool:
         """Process keyboard input. Returns False if window should close."""
@@ -122,8 +129,10 @@ class Renderer:
                 self.overlay_mode = 3
             elif e.key == ' ':
                 self.paused = not self.paused
-            elif e.key == 'f':
-                self.fast_forward = not self.fast_forward
+            elif e.key == ti.GUI.UP:
+                self.speed_index = min(self.speed_index + 1, len(self.SPEED_LEVELS) - 1)
+            elif e.key == ti.GUI.DOWN:
+                self.speed_index = max(self.speed_index - 1, 0)
         return True
 
     def render(self, tick: int, env_S, env_R, env_G):
@@ -148,9 +157,14 @@ class Renderer:
         self.gui.text(f"Tick: {tick}  {day_phase}", pos=(0.01, 0.98), color=0xFFFFFF)
         self.gui.text(f"Pop: {pop}  Genomes: {gen}", pos=(0.01, 0.95), color=0xFFFFFF)
         self.gui.text(f"View: {mode_names[self.overlay_mode]} [1-4]", pos=(0.01, 0.92), color=0xAAAAAA)
-        self.gui.text("[Space]=Pause [F]=Fast [Esc]=Quit", pos=(0.01, 0.89), color=0x888888)
+        speed = self.ticks_per_frame
+        speed_label = f"Speed: {speed}x [Up/Down]" if speed > 1 else "Speed: 1x [Up/Down]"
+        self.gui.text(f"[Space]=Pause  {speed_label}  [Esc]=Quit", pos=(0.01, 0.89), color=0x888888)
 
-        self.gui.show()
+        try:
+            self.gui.show()
+        except RuntimeError:
+            raise SystemExit(0)  # window close button clicked
 
     def close(self):
         self.gui.close()

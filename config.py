@@ -5,7 +5,7 @@ import math
 # =============================================================================
 # System
 # =============================================================================
-BACKEND = "cpu"  # "cpu" for macOS dev (Metal GUI crash workaround), "cuda" for Windows
+BACKEND = "auto"  # "auto" benchmarks and caches; CUDA ~2x faster across all population sizes
 HEADLESS = False
 RANDOM_SEED = 42
 
