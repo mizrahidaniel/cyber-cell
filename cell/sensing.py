@@ -1,4 +1,4 @@
-"""Compute all 16 sensory inputs for every alive cell in parallel."""
+"""Compute all 18 sensory inputs for every alive cell in parallel."""
 
 import taichi as ti
 
@@ -54,7 +54,7 @@ def cell_at(x: ti.i32, y: ti.i32) -> ti.i32:
 @ti.kernel
 def compute_sensory_inputs(env_S: ti.template(), env_R: ti.template(),
                            env_G: ti.template()):
-    """Fill sensory_inputs[i, 0..15] for all alive cells."""
+    """Fill sensory_inputs[i, 0..17] for all alive cells."""
     for i in range(MAX_CELLS):
         if cell_alive[i] == 1:
             x = cell_x[i]
@@ -99,10 +99,19 @@ def compute_sensory_inputs(env_S: ti.template(), env_R: ti.template(),
             sensory_inputs[i, 10] = ti.min(1.0, ti.max(-1.0,
                 (env_G[x, yp] - env_G[x, ym]) * 0.5))
 
-            # [11] cell ahead
+            # [11] cell ahead + [16]-[17] prey energy/membrane
             ahead = facing_offset(f)
-            sensory_inputs[i, 11] = ti.cast(
-                cell_at(x + ahead[0], y + ahead[1]), ti.f32)
+            ax = (x + ahead[0] + GRID_WIDTH) % GRID_WIDTH
+            ay = (y + ahead[1] + GRID_HEIGHT) % GRID_HEIGHT
+            ahead_id = grid_cell_id[ax, ay]
+            if ahead_id >= 0 and cell_alive[ahead_id] == 1:
+                sensory_inputs[i, 11] = 1.0
+                sensory_inputs[i, 16] = ti.min(1.0, cell_energy[ahead_id] / 100.0)
+                sensory_inputs[i, 17] = cell_membrane[ahead_id] / 100.0
+            else:
+                sensory_inputs[i, 11] = 0.0
+                sensory_inputs[i, 16] = 0.0
+                sensory_inputs[i, 17] = 0.0
 
             # [12] cell to the left
             left_dir = facing_offset(left_of(f))

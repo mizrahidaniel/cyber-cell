@@ -28,6 +28,7 @@ from cell.actions import (
     process_eat, process_emit_signal, process_repair, process_attack,
     process_divide_phase1, process_divide_phase2,
 )
+from cell.bonding import process_bond, process_unbond, process_bond_sharing
 from simulation.spawner import seed_cells
 
 # Auto-switch thresholds (benchmarked: CUDA wins up to ~10K, CPU wins above ~15K)
@@ -174,6 +175,9 @@ class SimulationEngine:
         process_emit_signal(env_G)
         process_repair()
         process_attack()
+        process_bond()
+        process_unbond()
+        process_bond_sharing()
 
         # 4. Division
         process_divide_phase1()

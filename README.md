@@ -31,10 +31,11 @@ python main.py --resume path/to/checkpoint.npz
 
 | Key | Action |
 |-----|--------|
-| `1` | Cell view (default) — cells colored by genome, brightness = energy |
+| `1` | Cell view (default) — cells colored by genome, brightness = energy. Attackers tinted red, bonded cells brightened |
 | `2` | Structure (S) chemical heatmap (green) |
 | `3` | Replication (R) chemical heatmap (red) |
 | `4` | Signal (G) chemical heatmap (blue) |
+| `5` | Membrane integrity heatmap (green=healthy, red=damaged) |
 | `Space` | Pause / unpause |
 | `Up` | Increase simulation speed (1x, 2x, 5x, 10x, 25x, 50x ticks/frame) |
 | `Down` | Decrease simulation speed |
@@ -73,10 +74,10 @@ Four chemicals drive the simulation:
 Each cell occupies one grid position and has:
 
 - **Internal state**: energy, structure, replication material, signal store, membrane integrity (0-100), age
-- **A neural network brain**: 16 sensory inputs → 32 hidden (tanh) → 32 hidden (tanh) → 10 action outputs (sigmoid)
-- **A genome**: 1,930 floating-point weights that define the neural network
+- **A neural network brain**: 18 sensory inputs → 32 hidden (tanh) → 32 hidden (tanh) → 10 action outputs (sigmoid)
+- **A genome**: 1,994 floating-point weights that define the neural network
 
-#### Sensory Inputs (16)
+#### Sensory Inputs (18)
 
 | # | Input | Description |
 |---|-------|-------------|
@@ -93,6 +94,8 @@ Each cell occupies one grid position and has:
 | 13 | cell_right | Cell to my right? (0/1) |
 | 14 | bond_count | Number of active bonds (0-1, normalized) |
 | 15 | age_normalized | Age / max_age |
+| 16 | prey_energy | Energy of cell ahead (0-1, normalized) |
+| 17 | prey_membrane | Membrane of cell ahead (0-1, normalized) |
 
 #### Action Outputs (10)
 
@@ -104,8 +107,8 @@ Each cell occupies one grid position and has:
 | 3 | eat | 0.02 | 0.5 | Absorb extra S/R from environment |
 | 4 | emit_signal | 0.1 | 0.5 | Release G chemical |
 | 5 | divide | 20.0 + 5R | 0.5 | Reproduce (requires E >= 20, R >= 5) |
-| 6 | bond | — | 0.5 | Bond with adjacent cell (not yet implemented) |
-| 7 | unbond | — | 0.5 | Break bonds (not yet implemented) |
+| 6 | bond | 0.05 | 0.5 | Bond with adjacent cell (mutual — both must fire) |
+| 7 | unbond | — | 0.5 | Break all bonds (unilateral) |
 | 8 | attack | 0.5 | 0.5 | Damage cell ahead (5 membrane damage) |
 | 9 | repair | 0.1 + 0.5S | 0.5 | Repair own membrane (+5 integrity) |
 
@@ -168,8 +171,9 @@ cybercell/
 ├── cell/
 │   ├── cell_state.py          # Cell state fields + grid occupancy + free-slot stack
 │   ├── genome.py              # Genome table, network evaluation, mutation
-│   ├── sensing.py             # 16 sensory inputs (parallel kernel)
+│   ├── sensing.py             # 18 sensory inputs (parallel kernel)
 │   ├── actions.py             # 10 actions with two-phase conflict resolution
+│   ├── bonding.py             # Bond formation, unbonding, chemical sharing
 │   └── lifecycle.py           # Photosynthesis, passive eating, metabolism, death
 ├── simulation/
 │   ├── engine.py              # Tick loop: environment → sense → think → act → resolve
@@ -198,7 +202,7 @@ Each simulation tick executes these steps in order:
 3. `replenish_deposits` — add chemicals at deposit locations
 4. `photosynthesis` — passive energy gain from light
 5. `eat_passive` — passive chemical absorption (small amount)
-6. `compute_sensory_inputs` — read environment into 16-input vector
+6. `compute_sensory_inputs` — read environment into 18-input vector
 7. `evaluate_all_networks` — forward pass through each cell's neural net
 8. `clear_intentions` — reset movement/division claim fields
 9. `process_turns` — handle turning
@@ -207,12 +211,15 @@ Each simulation tick executes these steps in order:
 12. `process_emit_signal` — release G chemical
 13. `process_repair` — spend S to fix membrane
 14. `process_attack` — damage adjacent cell
-15. `process_divide` (phase 1 + 2) — claim targets, resolve, create daughters
-16. `process_mutations` — apply mutations to new genomes (GPU kernel)
-17. `apply_metabolism` — deduct energy, age cells, apply membrane decay
-18. `check_death` — kill depleted cells, spill chemicals
-19. `swap_buffers` — toggle diffusion double-buffer
-20. Periodic: genome garbage collection, metric snapshots
+15. `process_bond` (phase 1 + 2) — mutual bond formation
+16. `process_unbond` — unilateral bond breaking
+17. `process_bond_sharing` — chemical sharing between bonded cells
+18. `process_divide` (phase 1 + 2) — claim targets, resolve, create daughters
+19. `process_mutations` — apply mutations to new genomes (GPU kernel)
+20. `apply_metabolism` — deduct energy, age cells, apply membrane decay
+21. `check_death` — kill depleted cells, spill chemicals, clean bonds
+22. `swap_buffers` — toggle diffusion double-buffer
+23. Periodic: genome garbage collection, metric snapshots
 
 ## Evolutionary Milestones
 
@@ -227,12 +234,16 @@ Each simulation tick executes these steps in order:
 - Multiple survival strategies coexist (Shannon diversity index: 9.38)
 - See `analysis/output/STUDY.md` for the full writeup and `analysis/output/evolution_report.png` for plots
 
-### Stage 3 (future): Predator-Prey Dynamics
-- Heterotrophs emerge (cells that attack and consume others)
-- Defensive behaviors evolve (fleeing, clustering)
+### Stage 3 (in progress): Predator-Prey Dynamics
+- Attack output bias lowered from -1.0 to -0.3 (sigmoid=0.43, reachable by 1-2 mutations)
+- Prey quality sensing added (inputs 16-17: energy and membrane of cell ahead)
+- Bonding implemented (mutual formation, unilateral breaking, chemical sharing)
+- Predation metrics tracked (attack_fraction, deaths_by_attack, bond_fraction)
+- Membrane integrity heatmap overlay (key `5`) shows combat zones
 
 ### Stage 4 (future): Multicellularity
 - Bonded cell clusters with differentiated behavior
+- Bonding infrastructure is now in place (see Stage 3)
 
 ## Analysis
 
@@ -293,7 +304,7 @@ CUDA performance is roughly constant across population sizes (all mutation/evolu
 ## Known Issues
 
 - **macOS Metal + GUI**: Previously reported as crashing WindowServer ([taichi-dev/taichi#8775](https://github.com/taichi-dev/taichi/issues/8775)), but tested working on macOS 15 + Apple Silicon with Taichi 1.7.4. The `--backend auto` mode will benchmark Metal and use it if fastest.
-- **Bonding** (actions 6-7) is parsed but not yet functional. The outputs are read but have no effect.
+- **Checkpoint compatibility**: The genome size changed from 1,930 to 1,994 weights (2 new sensory inputs). Checkpoints from previous versions are incompatible — start fresh.
 
 ## Requirements
 

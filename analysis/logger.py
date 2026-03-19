@@ -4,7 +4,7 @@ import json
 import os
 import time
 
-from analysis.metrics import get_population_stats, get_genome_diversity, get_movement_stats
+from analysis.metrics import get_population_stats, get_genome_diversity, get_movement_stats, get_predation_stats
 
 
 class SimulationLogger:
@@ -20,12 +20,14 @@ class SimulationLogger:
         pop_stats = get_population_stats()
         div_stats = get_genome_diversity()
         move_stats = get_movement_stats()
+        pred_stats = get_predation_stats()
 
         record = {
             "tick": tick,
             **pop_stats,
             **div_stats,
             **move_stats,
+            **pred_stats,
         }
 
         self._file.write(json.dumps(record) + "\n")

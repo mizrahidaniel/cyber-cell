@@ -8,7 +8,7 @@ from config import (
     NUM_OUTPUTS, SEED_WEIGHT_SIGMA, INITIAL_CELL_COUNT,
     W1_END, B1_END, W2_END, B2_END, W3_END, B3_END,
     MUTATION_RATE_PERTURB, MUTATION_SIGMA, MUTATION_RATE_RESET,
-    MUTATION_RATE_KNOCKOUT, RANDOM_SEED,
+    MUTATION_RATE_KNOCKOUT, RANDOM_SEED, ATTACK_BIAS,
 )
 from cell.cell_state import cell_alive, cell_genome_id
 
@@ -43,7 +43,7 @@ H = NETWORK_HIDDEN_SIZE
 
 @ti.kernel
 def evaluate_all_networks():
-    """Forward pass: 16 inputs -> 32 hidden (tanh) -> 32 hidden (tanh) -> 10 outputs (sigmoid)."""
+    """Forward pass: inputs -> 32 hidden (tanh) -> 32 hidden (tanh) -> 10 outputs (sigmoid)."""
     for i in range(MAX_CELLS):
         if cell_alive[i] == 1:
             gid = cell_genome_id[i]
@@ -80,21 +80,21 @@ def init_genome_table(count: int = INITIAL_CELL_COUNT, seed: int = RANDOM_SEED):
 
     # Bias output layer biases for viable starting phenotype:
     #   Output 5 (divide): bias=0.5 → sigmoid(0.5)≈0.62, fires reliably
-    #   Output 8 (attack): bias=-1.0 → sigmoid(-1)≈0.27, suppressed
+    #   Output 8 (attack): bias=ATTACK_BIAS → suppressed but evolvable
     #   Output 0 (move): bias=0.0 → sigmoid(0)=0.5, neutral (one mutation can activate)
     #   Others: bias=0 → 0.5, at threshold boundary
-    # Biases are at offsets W3_END to B3_END (positions 1920-1929)
+    # Biases are at offsets W3_END to B3_END
     output_biases = np.array([
-         0.0,   # 0: move_forward — neutral, easily activated by mutation
-         0.0,   # 1: turn_left
-         0.0,   # 2: turn_right
-         0.0,   # 3: eat (passive eating handles this now)
-         0.0,   # 4: emit_signal
-         0.5,   # 5: divide — fires when conditions met
-         0.0,   # 6: bond
-         0.0,   # 7: unbond
-        -1.0,   # 8: attack — suppressed to prevent random killing
-         0.0,   # 9: repair
+         0.0,          # 0: move_forward — neutral, easily activated by mutation
+         0.0,          # 1: turn_left
+         0.0,          # 2: turn_right
+         0.0,          # 3: eat (passive eating handles this now)
+         0.0,          # 4: emit_signal
+         0.5,          # 5: divide — fires when conditions met
+         0.0,          # 6: bond
+         0.0,          # 7: unbond
+         ATTACK_BIAS,  # 8: attack — suppressed but reachable by 1-2 mutations
+         0.0,          # 9: repair
     ], dtype=np.float32)
 
     for g in range(count):

@@ -81,10 +81,11 @@ ATTACK_MEMBRANE_DAMAGE = 5.0
 # Genome / Neural Network
 # =============================================================================
 MAX_GENOMES = 50000
-NUM_INPUTS = 16
+NUM_INPUTS = 18
 NETWORK_HIDDEN_SIZE = 32
 NUM_OUTPUTS = 10
-# 16*32 + 32 + 32*32 + 32 + 32*10 + 10 = 1930
+# 18*32 + 32 + 32*32 + 32 + 32*10 + 10 = 1994
+ATTACK_BIAS = -0.3            # initial attack output bias (sigmoid(-0.3)=0.43, evolvable)
 GENOME_SIZE = (NUM_INPUTS * NETWORK_HIDDEN_SIZE + NETWORK_HIDDEN_SIZE +
                NETWORK_HIDDEN_SIZE * NETWORK_HIDDEN_SIZE + NETWORK_HIDDEN_SIZE +
                NETWORK_HIDDEN_SIZE * NUM_OUTPUTS + NUM_OUTPUTS)

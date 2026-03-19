@@ -4,8 +4,9 @@ import numpy as np
 import taichi as ti
 
 from config import MAX_CELLS, MAX_GENOMES, ACTION_THRESHOLD
-from cell.cell_state import cell_alive, cell_energy, cell_age, cell_repmat, cell_x
+from cell.cell_state import cell_alive, cell_energy, cell_age, cell_repmat, cell_x, cell_membrane, cell_bonds
 from cell.genome import genome_ref_count, action_outputs
+from cell.lifecycle import deaths_by_attack, deaths_by_starvation
 
 # Birth/death counters (reset periodically)
 births_counter = ti.field(dtype=ti.i32, shape=())
@@ -82,4 +83,46 @@ def get_genome_diversity() -> dict:
         "num_genomes": num_genomes,
         "shannon_index": shannon,
         "dominant_fraction": dominant,
+    }
+
+
+def get_predation_stats() -> dict:
+    """Compute predation and bonding metrics for Stage 3 detection."""
+    alive = cell_alive.to_numpy() == 1
+    count = int(alive.sum())
+
+    if count == 0:
+        return {
+            "attack_fraction": 0.0,
+            "avg_membrane": 0.0,
+            "bond_fraction": 0.0,
+            "deaths_by_attack": 0,
+            "deaths_by_starvation": 0,
+        }
+
+    # Fraction of cells with attack output above threshold
+    attack_out = action_outputs.to_numpy()[:MAX_CELLS, 8]
+    attackers = int((attack_out[alive] >= ACTION_THRESHOLD).sum())
+
+    # Average membrane integrity (drops indicate active combat)
+    membranes = cell_membrane.to_numpy()[alive]
+
+    # Fraction of cells with any bonds
+    bonds = cell_bonds.to_numpy()[:MAX_CELLS]
+    bonded_cells = int(((bonds[alive] >= 0).any(axis=1)).sum())
+
+    # Death cause counters (cumulative since last reset)
+    d_attack = int(deaths_by_attack[None])
+    d_starve = int(deaths_by_starvation[None])
+
+    # Reset counters for next interval
+    deaths_by_attack[None] = 0
+    deaths_by_starvation[None] = 0
+
+    return {
+        "attack_fraction": float(attackers / count),
+        "avg_membrane": float(membranes.mean()),
+        "bond_fraction": float(bonded_cells / count),
+        "deaths_by_attack": d_attack,
+        "deaths_by_starvation": d_starve,
     }

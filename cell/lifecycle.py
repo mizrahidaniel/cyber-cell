@@ -11,10 +11,14 @@ from config import (
 )
 from cell.cell_state import (
     cell_alive, cell_x, cell_y, cell_energy, cell_structure, cell_repmat,
-    cell_signal, cell_membrane, cell_age, grid_cell_id,
+    cell_signal, cell_membrane, cell_age, cell_bonds, grid_cell_id,
     cell_count, free_slots, free_slot_count,
 )
 from world.grid import light_field
+
+# Death-cause counters (reset each snapshot interval)
+deaths_by_attack = ti.field(dtype=ti.i32, shape=())
+deaths_by_starvation = ti.field(dtype=ti.i32, shape=())
 
 
 @ti.kernel
@@ -86,6 +90,21 @@ def check_death(env_S: ti.template(), env_R: ti.template(),
         if cell_alive[i] == 1 and cell_membrane[i] <= 0.0:
             x = cell_x[i]
             y = cell_y[i]
+
+            # Track death cause: energy > 0 means killed (attack/age), else starvation
+            if cell_energy[i] > 0.0:
+                ti.atomic_add(deaths_by_attack[None], 1)
+            else:
+                ti.atomic_add(deaths_by_starvation[None], 1)
+
+            # Clean up bonds before death
+            for b in range(4):
+                partner = cell_bonds[i, b]
+                if partner >= 0:
+                    for pb in range(4):
+                        if cell_bonds[partner, pb] == i:
+                            cell_bonds[partner, pb] = -1
+                    cell_bonds[i, b] = -1
 
             # Spill internal chemicals to environment
             env_S[x, y] += cell_structure[i] + cell_energy[i] * 0.5

@@ -13,7 +13,7 @@ from config import (
 from cell.cell_state import (
     cell_alive, cell_x, cell_y, cell_energy, cell_structure, cell_repmat,
     cell_signal, cell_membrane, cell_age, cell_genome_id, cell_facing,
-    grid_cell_id, cell_count, free_slots, free_slot_count,
+    cell_bonds, grid_cell_id, cell_count, free_slots, free_slot_count,
 )
 from cell.genome import action_outputs, needs_mutation
 from cell.sensing import facing_offset
@@ -64,7 +64,12 @@ def process_movement_phase1():
     """Phase 1: each cell declares its movement intention and claims the target."""
     for i in range(MAX_CELLS):
         if cell_alive[i] == 1 and action_outputs[i, 0] > ACTION_THRESHOLD:
-            if cell_energy[i] >= MOVE_COST:
+            # Bonded cells cannot move independently
+            bonded = 0
+            for b in range(4):
+                if cell_bonds[i, b] >= 0:
+                    bonded = 1
+            if bonded == 0 and cell_energy[i] >= MOVE_COST:
                 offset = facing_offset(cell_facing[i])
                 tx = (cell_x[i] + offset[0] + GRID_WIDTH) % GRID_WIDTH
                 ty = (cell_y[i] + offset[1] + GRID_HEIGHT) % GRID_HEIGHT

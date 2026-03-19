@@ -156,6 +156,44 @@ def detect_phases(data: dict[str, np.ndarray]) -> list[dict]:
             })
             break
 
+    # Phase 6: Predation — attack_fraction exceeds 1% sustained
+    if "attack_fraction" in data:
+        attack = data["attack_fraction"]
+        window = min(5, len(attack))
+        if window >= 2:
+            attack_smooth = np.convolve(attack, np.ones(window)/window, mode="valid")
+            for i in range(len(attack_smooth)):
+                if attack_smooth[i] > 0.01:
+                    tick_idx = i + window // 2
+                    if tick_idx < len(ticks):
+                        phases.append({
+                            "name": "Predation Emergence",
+                            "start_tick": int(ticks[tick_idx]),
+                            "end_tick": int(ticks[-1]),
+                            "description": f"Attack fraction exceeds 1% at tick {int(ticks[tick_idx])}, "
+                                           f"reaches {attack[-1]:.1%} by end",
+                        })
+                    break
+
+    # Phase 7: Bonding — bond_fraction exceeds 1% sustained
+    if "bond_fraction" in data:
+        bonds = data["bond_fraction"]
+        window = min(5, len(bonds))
+        if window >= 2:
+            bond_smooth = np.convolve(bonds, np.ones(window)/window, mode="valid")
+            for i in range(len(bond_smooth)):
+                if bond_smooth[i] > 0.01:
+                    tick_idx = i + window // 2
+                    if tick_idx < len(ticks):
+                        phases.append({
+                            "name": "Bonding Emergence",
+                            "start_tick": int(ticks[tick_idx]),
+                            "end_tick": int(ticks[-1]),
+                            "description": f"Bond fraction exceeds 1% at tick {int(ticks[tick_idx])}, "
+                                           f"reaches {bonds[-1]:.1%} by end",
+                        })
+                    break
+
     return phases
 
 # ---------------------------------------------------------------------------
@@ -207,7 +245,7 @@ def compute_rates(data: dict[str, np.ndarray]) -> dict:
     else:
         x_rate_per_1k = 0
 
-    return {
+    result = {
         "total_ticks": int(dt),
         "final_population": int(pop[-1]),
         "min_population": int(pop[min_idx]),
@@ -221,6 +259,20 @@ def compute_rates(data: dict[str, np.ndarray]) -> dict:
         "final_avg_energy": round(float(energy[-1]), 1),
         "max_age_observed": int(data["max_age"][-1]),
     }
+
+    # Predation metrics (if available)
+    if "attack_fraction" in data:
+        result["final_attack_fraction"] = round(float(data["attack_fraction"][-1]), 4)
+    if "bond_fraction" in data:
+        result["final_bond_fraction"] = round(float(data["bond_fraction"][-1]), 4)
+    if "avg_membrane" in data:
+        result["final_avg_membrane"] = round(float(data["avg_membrane"][-1]), 1)
+    if "deaths_by_attack" in data:
+        result["total_deaths_by_attack"] = int(data["deaths_by_attack"].sum())
+    if "deaths_by_starvation" in data:
+        result["total_deaths_by_starvation"] = int(data["deaths_by_starvation"].sum())
+
+    return result
 
 # ---------------------------------------------------------------------------
 # Plotting
@@ -506,7 +558,7 @@ def generate_report(run_dir: str, data: dict, phases: list[dict],
 
     lines.append(f"## What Are the Cells \"Learning\"?")
     lines.append(f"")
-    lines.append(f"Each cell has a 1,930-parameter neural network (16 inputs → 32 → 32 → 10 outputs) "
+    lines.append(f"Each cell has a neural network "
                  f"that maps sensory inputs to actions. Through mutation and selection, these networks "
                  f"evolve to encode survival strategies. The key evolved behaviors we can infer from "
                  f"the metrics:")
@@ -529,7 +581,7 @@ def generate_report(run_dir: str, data: dict, phases: list[dict],
     lines.append(f"")
     lines.append(f"- **Platform**: CyberCell evolutionary simulation (Taichi Lang + Python)")
     lines.append(f"- **Grid**: 500x500 toroidal, three light zones (bright/dim/dark)")
-    lines.append(f"- **Organisms**: Neural network-controlled cells with 16 sensory inputs, 10 actions")
+    lines.append(f"- **Organisms**: Neural network-controlled cells with sensory inputs and 10 actions")
     lines.append(f"- **Selection**: Natural — cells die without energy, reproduce by division")
     lines.append(f"- **Mutation**: Weight perturbation (3%), reset (0.1%), node knockout (0.05%)")
     lines.append(f"- **Metrics**: Logged every {1000} ticks via population census")

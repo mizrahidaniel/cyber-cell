@@ -82,7 +82,7 @@ Energy accumulation shows cells evolved increasingly efficient metabolic strateg
 
 ## What Are the Cells "Learning"?
 
-Each cell has a 1,930-parameter neural network (16 inputs → 32 → 32 → 10 outputs) that maps sensory inputs to actions. Through mutation and selection, these networks evolve to encode survival strategies. The key evolved behaviors we can infer from the metrics:
+Each cell has a neural network that maps sensory inputs to actions. Through mutation and selection, these networks evolve to encode survival strategies. The key evolved behaviors we can infer from the metrics:
 
 1. **Energy management**: Cells that survive the initial crash have networks that effectively couple light sensing to photosynthesis behavior
 2. **Chemical gradient following**: The rise in movement fraction combined with spatial expansion indicates cells evolved to follow S and R chemical gradients
@@ -95,7 +95,7 @@ Importantly, **none of these behaviors were programmed**. The simulation rules o
 
 - **Platform**: CyberCell evolutionary simulation (Taichi Lang + Python)
 - **Grid**: 500x500 toroidal, three light zones (bright/dim/dark)
-- **Organisms**: Neural network-controlled cells with 16 sensory inputs, 10 actions
+- **Organisms**: Neural network-controlled cells with sensory inputs and 10 actions
 - **Selection**: Natural — cells die without energy, reproduce by division
 - **Mutation**: Weight perturbation (3%), reset (0.1%), node knockout (0.05%)
 - **Metrics**: Logged every 1000 ticks via population census
