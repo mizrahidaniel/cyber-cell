@@ -31,9 +31,9 @@ E_DECAY_FLAT = 0.02           # flat internal energy decay per tick (not percent
 DECAY_RATE_S = 0.001
 DECAY_RATE_R = 0.001
 DECAY_RATE_G = 0.05
-DEPOSIT_REPLENISH_RATE = 0.015
+DEPOSIT_REPLENISH_RATE = 0.012
 NUM_DEPOSITS_S = 200
-NUM_DEPOSITS_R = 300
+NUM_DEPOSITS_R = 200
 DEPOSIT_CLUSTER_RADIUS = 15
 DEPOSIT_CLUSTER_AMOUNT = 5.0
 
@@ -43,7 +43,7 @@ DEPOSIT_CLUSTER_AMOUNT = 5.0
 MAX_CELLS = 50000
 INITIAL_CELL_COUNT = 1000
 MAX_CELL_AGE = 5000
-INITIAL_ENERGY = 25.0
+INITIAL_ENERGY = 35.0
 INITIAL_STRUCTURE = 25.0
 INITIAL_REPMAT = 10.0
 MEMBRANE_INITIAL = 100.0
@@ -53,15 +53,15 @@ AGE_MEMBRANE_DECAY = 1.0           # membrane loss per tick past max age
 # =============================================================================
 # Energy costs
 # =============================================================================
-BASAL_METABOLISM = 0.05
+BASAL_METABOLISM = 0.08
 MOVE_COST = 0.1
 TURN_COST = 0.02
 EAT_COST = 0.02
 SIGNAL_COST = 0.1
 DIVIDE_COST = 20.0
 DIVIDE_R_COST = 5.0
-BOND_COST = 0.05
-ATTACK_COST = 0.5
+BOND_COST = 0.01
+ATTACK_COST = 0.3
 REPAIR_COST = 0.1
 REPAIR_S_COST = 0.5
 REPAIR_MEMBRANE_GAIN = 5.0
@@ -70,12 +70,12 @@ NETWORK_COST = 0.01
 # =============================================================================
 # Energy income
 # =============================================================================
-PHOTOSYNTHESIS_RATE = 0.5
+PHOTOSYNTHESIS_RATE = 0.45
 S_ENERGY_VALUE = 0.3
 R_ENERGY_VALUE = 0.5
 EAT_ABSORB_CAP = 2.0          # max chemical absorbed per eat action per tick
 PASSIVE_EAT_CAP = 0.05        # max chemical absorbed passively per tick (no neural net)
-ATTACK_MEMBRANE_DAMAGE = 5.0
+ATTACK_MEMBRANE_DAMAGE = 8.0
 
 # =============================================================================
 # Genome / Neural Network
@@ -120,6 +120,7 @@ DAUGHTER_RESOURCE_SHARE = 0.4
 # Bonding
 # =============================================================================
 BOND_SHARE_RATE = 0.1
+R_LIGHT_ZONE_FRACTION = 0.15    # fraction of R deposits placed in the light zone
 
 # =============================================================================
 # Visualization
@@ -131,4 +132,5 @@ GUI_FPS = 60
 # Analysis
 # =============================================================================
 SNAPSHOT_INTERVAL = 1000       # ticks between snapshots
+SPATIAL_SNAPSHOT_INTERVAL = 10000  # ticks between spatial snapshots (positions + bonds)
 GENOME_GC_INTERVAL = 1000     # ticks between genome garbage collection

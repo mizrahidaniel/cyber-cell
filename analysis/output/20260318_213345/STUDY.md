@@ -1,12 +1,12 @@
 # CyberCell Evolutionary Dynamics Study
 
-**Run:** `20260318_202818`  
-**Duration:** 165,000 ticks  
+**Run:** `20260318_213345`  
+**Duration:** 199,000 ticks  
 **Date:** 2026-03-18  
 
 ## Executive Summary
 
-This simulation run achieved: **stable self-sustaining population, chemotaxis (64% of cells moving), cross-zone exploration (avg position x=273), long-lived lineages (max age 140,200 ticks)**.
+This simulation run achieved: **stable self-sustaining population, chemotaxis (57% of cells moving), cross-zone exploration (avg position x=268), long-lived lineages (max age 165,892 ticks)**.
 
 Starting from 2,000 cells with random neural network genomes, the population underwent natural selection driven entirely by environmental pressure — no behaviors were pre-programmed.
 
@@ -17,25 +17,25 @@ Starting from 2,000 cells with random neural network genomes, the population und
 | Metric | Value |
 |--------|-------|
 | Initial population | 2,000 |
-| Minimum (bottleneck) | 34 (tick 6,000) |
-| Final population | 11,889 |
-| Growth rate | 3.8% per 1K ticks (post-bottleneck) |
+| Minimum (bottleneck) | 18 (tick 6,000) |
+| Final population | 10,850 |
+| Growth rate | 3.4% per 1K ticks (post-bottleneck) |
 
-The initial crash reflects **purifying selection**: cells with random neural networks that fail to photosynthesize or manage energy are eliminated. Only ~2% of initial genomes survive. The survivors then expand as successful strategies reproduce.
+The initial crash reflects **purifying selection**: cells with random neural networks that fail to photosynthesize or manage energy are eliminated. Only ~1% of initial genomes survive. The survivors then expand as successful strategies reproduce.
 
 ### 2. Emergence of Directed Movement (Chemotaxis)
 
 | Metric | Value |
 |--------|-------|
-| Initial movement | 26.1% (random) |
-| Post-crash movement | 17.6% (non-movers survive) |
-| Final movement | 63.6% |
-| Movement evolution rate | +0.0026 per 1K ticks |
+| Initial movement | 25.1% (random) |
+| Post-crash movement | 0.0% (non-movers survive) |
+| Final movement | 57.5% |
+| Movement evolution rate | +0.0019 per 1K ticks |
 
 Movement follows a characteristic **U-shaped curve**:
 1. **Random phase**: Initial genomes produce ~26% movement (noise)
-2. **Crash phase**: Movement drops to ~18% — stationary photosynthesizers survive the bottleneck
-3. **Evolution phase**: Movement rises to 64% — but this time it is *directed*, not random
+2. **Crash phase**: Movement drops to ~0% — stationary photosynthesizers survive the bottleneck
+3. **Evolution phase**: Movement rises to 57% — but this time it is *directed*, not random
 
 The critical insight: post-crash movement is qualitatively different from initial random movement. Evolved movers have neural networks that couple chemical gradient sensing to motor output — they move *toward resources*.
 
@@ -43,42 +43,43 @@ The critical insight: post-crash movement is qualitatively different from initia
 
 | Metric | Value |
 |--------|-------|
-| Initial avg X | 85.6 (light zone center ~83) |
-| Final avg X | 272.6 |
-| Expansion rate | 1.2 units per 1K ticks |
+| Initial avg X | 85.1 (light zone center ~83) |
+| Final avg X | 267.8 |
+| Expansion rate | 0.4 units per 1K ticks |
 
-Cells began clustered in the light zone (x < 166) and expanded into the **dim zone** (avg x = 272.6). This spatial expansion indicates cells evolved the ability to survive outside the primary energy source, using chemical deposits for sustenance.
+Cells began clustered in the light zone (x < 166) and expanded into the **dim zone** (avg x = 267.8). This spatial expansion indicates cells evolved the ability to survive outside the primary energy source, using chemical deposits for sustenance.
 
 ### 4. Genetic Diversity
 
 | Metric | Value |
 |--------|-------|
 | Initial Shannon index | 6.91 |
-| Final Shannon index | 9.383 |
-| Final unique genomes | 11,889 |
-| Dominant genome fraction | 0.0084% |
+| Final Shannon index | 9.292 |
+| Final unique genomes | 10,850 |
+| Dominant genome fraction | 0.0092% |
 
-Shannon diversity *increased* over the run, indicating the evolution of multiple coexisting strategies rather than a single dominant genome. The dominant genome accounts for only 0.0084% of the population — extreme diversity.
+Shannon diversity *increased* over the run, indicating the evolution of multiple coexisting strategies rather than a single dominant genome. The dominant genome accounts for only 0.0092% of the population — extreme diversity.
 
 ### 5. Energy Economy
 
 | Metric | Value |
 |--------|-------|
 | Initial avg energy | 2.3 |
-| Final avg energy | 406.3 |
-| Final avg repmat | 738.9 |
-| Max observed age | 140,200 ticks |
+| Final avg energy | 319.2 |
+| Final avg repmat | 623.0 |
+| Max observed age | 165,892 ticks |
 
-Energy accumulation shows cells evolved increasingly efficient metabolic strategies. The max observed age of 140,200 ticks (28x the nominal max age of 5,000) indicates lineages with exceptional survival ability.
+Energy accumulation shows cells evolved increasingly efficient metabolic strategies. The max observed age of 165,892 ticks (33x the nominal max age of 5,000) indicates lineages with exceptional survival ability.
 
 ## Evolutionary Phases Detected
 
 | Phase | Tick Range | Description |
 |-------|-----------|-------------|
-| Crash | 0 – 6,000 | Population drops from 2000 to 34 (98% mortality) |
-| Expansion | 6,000 – 9,000 | Population doubles to 70 |
-| Chemotaxis Emergence | 8,000 – 165,000 | Movement fraction exceeds 15% at tick 8000, reaches 63.6% by end |
-| Zone Exploration | 32,000 – 165,000 | Average cell position crosses into dim zone (x>166) at tick 32000, reaches x=273 |
+| Crash | 0 – 6,000 | Population drops from 2000 to 18 (99% mortality) |
+| Expansion | 6,000 – 10,000 | Population doubles to 41 |
+| Chemotaxis Emergence | 17,000 – 199,000 | Movement fraction exceeds 15% at tick 17000, reaches 57.5% by end |
+| Zone Exploration | 21,000 – 199,000 | Average cell position crosses into dim zone (x>166) at tick 21000, reaches x=268 |
+| Bonding Emergence | 2,000 – 199,000 | Bond fraction exceeds 1% at tick 2000, reaches 3.4% by end |
 
 ## What Are the Cells "Learning"?
 

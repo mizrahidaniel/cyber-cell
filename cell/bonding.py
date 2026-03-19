@@ -4,7 +4,7 @@ import taichi as ti
 
 from config import (
     MAX_CELLS, GRID_WIDTH, GRID_HEIGHT, ACTION_THRESHOLD,
-    BOND_COST, BOND_SHARE_RATE,
+    BOND_COST, BOND_SHARE_RATE, MOVE_COST,
 )
 from cell.cell_state import (
     cell_alive, cell_x, cell_y, cell_energy, cell_structure, cell_repmat,
@@ -21,7 +21,7 @@ grid_bond_claim = ti.field(dtype=ti.i32, shape=(GRID_WIDTH, GRID_HEIGHT))
 def clear_bond_claims():
     """Reset bond claim grid before each tick."""
     for i, j in grid_bond_claim:
-        grid_bond_claim[i, j] = -1
+        grid_bond_claim[i, j] = MAX_CELLS
 
 
 @ti.kernel
@@ -47,7 +47,7 @@ def process_bond_phase2():
             if cell_energy[i] >= BOND_COST:
                 # Check if someone claimed our position
                 claimer = grid_bond_claim[cell_x[i], cell_y[i]]
-                if claimer >= 0 and claimer != i and cell_alive[claimer] == 1:
+                if claimer < MAX_CELLS and claimer != i and cell_alive[claimer] == 1:
                     # Verify claimer is adjacent to us
                     dx = cell_x[claimer] - cell_x[i]
                     dy = cell_y[claimer] - cell_y[i]
@@ -141,6 +141,152 @@ def process_bond_sharing():
                     # Bond maintenance cost (each cell pays)
                     cell_energy[i] -= BOND_COST
                     cell_energy[i] = ti.max(0.0, cell_energy[i])
+
+
+# =============================================================================
+# Bonded group movement — cells move as a unit
+# =============================================================================
+
+bonded_move_active = ti.field(dtype=ti.i32, shape=(MAX_CELLS,))
+bonded_move_dx = ti.field(dtype=ti.i32, shape=(MAX_CELLS,))
+bonded_move_dy = ti.field(dtype=ti.i32, shape=(MAX_CELLS,))
+grid_bonded_move_claim = ti.field(dtype=ti.i32, shape=(GRID_WIDTH, GRID_HEIGHT))
+
+
+@ti.kernel
+def clear_bonded_move_intents():
+    for i in range(MAX_CELLS):
+        bonded_move_active[i] = 0
+    for i, j in grid_bonded_move_claim:
+        grid_bonded_move_claim[i, j] = MAX_CELLS
+
+
+@ti.kernel
+def process_bonded_movement_phase1():
+    """Bonded cells propose group moves. Lowest-index mover in a group leads."""
+    for i in range(MAX_CELLS):
+        if cell_alive[i] == 1 and action_outputs[i, 0] > ACTION_THRESHOLD:
+            bonded = 0
+            for b in range(4):
+                if cell_bonds[i, b] >= 0:
+                    bonded = 1
+            if bonded == 1 and cell_energy[i] >= MOVE_COST:
+                # Am I the lowest-index mover among my direct bond partners?
+                is_leader = 1
+                for b in range(4):
+                    p = cell_bonds[i, b]
+                    if p >= 0 and p < i and cell_alive[p] == 1:
+                        if action_outputs[p, 0] > ACTION_THRESHOLD and cell_energy[p] >= MOVE_COST:
+                            is_leader = 0
+
+                if is_leader == 1:
+                    offset = facing_offset(cell_facing[i])
+                    dx = offset[0]
+                    dy = offset[1]
+
+                    tx = (cell_x[i] + dx + GRID_WIDTH) % GRID_WIDTH
+                    ty = (cell_y[i] + dy + GRID_HEIGHT) % GRID_HEIGHT
+
+                    can_move = 1
+
+                    # My target must be empty or a bond partner
+                    target_id = grid_cell_id[tx, ty]
+                    if target_id != -1:
+                        is_partner = 0
+                        for b in range(4):
+                            if cell_bonds[i, b] == target_id:
+                                is_partner = 1
+                        if is_partner == 0:
+                            can_move = 0
+
+                    # Each partner's shifted position must be empty, me, or another partner
+                    if can_move == 1:
+                        for b in range(4):
+                            p = cell_bonds[i, b]
+                            if p >= 0 and cell_alive[p] == 1:
+                                px = (cell_x[p] + dx + GRID_WIDTH) % GRID_WIDTH
+                                py = (cell_y[p] + dy + GRID_HEIGHT) % GRID_HEIGHT
+                                p_target = grid_cell_id[px, py]
+                                if p_target != -1 and p_target != i:
+                                    is_group = 0
+                                    for b2 in range(4):
+                                        if cell_bonds[i, b2] == p_target:
+                                            is_group = 1
+                                    if is_group == 0:
+                                        can_move = 0
+
+                    if can_move == 1:
+                        bonded_move_active[i] = 1
+                        bonded_move_dx[i] = dx
+                        bonded_move_dy[i] = dy
+
+                        ti.atomic_min(grid_bonded_move_claim[tx, ty], i)
+                        for b in range(4):
+                            p = cell_bonds[i, b]
+                            if p >= 0 and cell_alive[p] == 1:
+                                px = (cell_x[p] + dx + GRID_WIDTH) % GRID_WIDTH
+                                py = (cell_y[p] + dy + GRID_HEIGHT) % GRID_HEIGHT
+                                ti.atomic_min(grid_bonded_move_claim[px, py], i)
+
+
+@ti.kernel
+def process_bonded_movement_phase2():
+    """Resolve conflicts and execute winning group moves."""
+    for i in range(MAX_CELLS):
+        if bonded_move_active[i] == 1:
+            dx = bonded_move_dx[i]
+            dy = bonded_move_dy[i]
+
+            tx = (cell_x[i] + dx + GRID_WIDTH) % GRID_WIDTH
+            ty = (cell_y[i] + dy + GRID_HEIGHT) % GRID_HEIGHT
+
+            # Check if we won ALL target claims
+            all_won = 1
+            if grid_bonded_move_claim[tx, ty] != i:
+                all_won = 0
+
+            if all_won == 1:
+                for b in range(4):
+                    p = cell_bonds[i, b]
+                    if p >= 0 and cell_alive[p] == 1:
+                        px = (cell_x[p] + dx + GRID_WIDTH) % GRID_WIDTH
+                        py = (cell_y[p] + dy + GRID_HEIGHT) % GRID_HEIGHT
+                        if grid_bonded_move_claim[px, py] != i:
+                            all_won = 0
+
+            if all_won == 1:
+                # Clear ALL old positions first
+                grid_cell_id[cell_x[i], cell_y[i]] = -1
+                for b in range(4):
+                    p = cell_bonds[i, b]
+                    if p >= 0 and cell_alive[p] == 1:
+                        grid_cell_id[cell_x[p], cell_y[p]] = -1
+
+                # Move leader
+                cell_x[i] = tx
+                cell_y[i] = ty
+                grid_cell_id[tx, ty] = i
+
+                # Move partners
+                for b in range(4):
+                    p = cell_bonds[i, b]
+                    if p >= 0 and cell_alive[p] == 1:
+                        px = (cell_x[p] + dx + GRID_WIDTH) % GRID_WIDTH
+                        py = (cell_y[p] + dy + GRID_HEIGHT) % GRID_HEIGHT
+                        cell_x[p] = px
+                        cell_y[p] = py
+                        grid_cell_id[px, py] = p
+
+                # Only the leader pays movement cost
+                cell_energy[i] -= MOVE_COST
+                cell_energy[i] = ti.max(0.0, cell_energy[i])
+
+
+def process_bonded_movement():
+    """Execute full bonded group movement: clear, propose, resolve."""
+    clear_bonded_move_intents()
+    process_bonded_movement_phase1()
+    process_bonded_movement_phase2()
 
 
 def process_bond():

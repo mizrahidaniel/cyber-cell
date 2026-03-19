@@ -4,7 +4,13 @@ import json
 import os
 import time
 
-from analysis.metrics import get_population_stats, get_genome_diversity, get_movement_stats, get_predation_stats
+import numpy as np
+
+from analysis.metrics import (
+    get_population_stats, get_genome_diversity, get_movement_stats,
+    get_predation_stats, get_spatial_snapshot,
+)
+from config import SPATIAL_SNAPSHOT_INTERVAL
 
 
 class SimulationLogger:
@@ -12,6 +18,8 @@ class SimulationLogger:
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         self.log_dir = os.path.join(run_dir, timestamp)
         os.makedirs(self.log_dir, exist_ok=True)
+        self.spatial_dir = os.path.join(self.log_dir, "spatial")
+        os.makedirs(self.spatial_dir, exist_ok=True)
         self.log_path = os.path.join(self.log_dir, "metrics.jsonl")
         self._file = open(self.log_path, "w")
 
@@ -32,6 +40,12 @@ class SimulationLogger:
 
         self._file.write(json.dumps(record) + "\n")
         self._file.flush()
+
+        # Save spatial snapshot at lower frequency
+        if tick % SPATIAL_SNAPSHOT_INTERVAL == 0:
+            spatial = get_spatial_snapshot()
+            path = os.path.join(self.spatial_dir, f"spatial_{tick:08d}.npz")
+            np.savez_compressed(path, **spatial)
 
     def close(self):
         self._file.close()

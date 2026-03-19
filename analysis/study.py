@@ -591,6 +591,10 @@ def generate_report(run_dir: str, data: dict, phases: list[dict],
     lines.append(f"")
     lines.append(f"![Evolutionary Dynamics](evolution_report.png)")
     lines.append(f"")
+    lines.append(f"## See Also")
+    lines.append(f"")
+    lines.append(f"- [Spatial Structure Analysis](SPATIAL_ANALYSIS.md) (if available)")
+    lines.append(f"")
 
     return "\n".join(lines)
 
@@ -600,9 +604,6 @@ def generate_report(run_dir: str, data: dict, phases: list[dict],
 
 def main():
     os.chdir(Path(__file__).resolve().parent.parent)
-
-    output_dir = Path("analysis/output")
-    output_dir.mkdir(exist_ok=True)
 
     if "--compare" in sys.argv:
         idx = sys.argv.index("--compare")
@@ -615,9 +616,11 @@ def main():
             return
         label_a = Path(dir_a).name
         label_b = Path(dir_b).name
+        output_dir = Path("analysis/output") / f"compare_{label_a}_vs_{label_b}"
+        output_dir.mkdir(parents=True, exist_ok=True)
         plot_comparison(data_a, data_b, label_a, label_b,
                         str(output_dir / "comparison.png"))
-        print("\nComparison plot saved.")
+        print(f"\nComparison plot saved to {output_dir}/")
         return
 
     # Find or use specified run
@@ -644,8 +647,14 @@ def main():
         print(f"No data in {best_dir}")
         return
 
+    # Versioned output directory per run
+    run_name = Path(best_dir).name
+    output_dir = Path("analysis/output") / run_name
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     print(f"Analyzing: {best_dir} ({len(records)} snapshots, "
           f"{int(data['tick'][-1]):,} ticks)")
+    print(f"Output -> {output_dir}/")
 
     # Detect phases
     phases = detect_phases(data)
@@ -662,15 +671,17 @@ def main():
     # Generate plots
     print(f"\nGenerating plots...")
     plot_single_run(data, phases,
-                    f"CyberCell Evolutionary Dynamics — {Path(best_dir).name}",
+                    f"CyberCell Evolutionary Dynamics — {run_name}",
                     str(output_dir / "evolution_report.png"))
 
-    # If we have a second-longest run, make comparison
-    if len(run_dirs) >= 2:
-        second_dir = run_dirs[1][0]
+    # Compare against the next-best run (find one if we only have one)
+    all_runs = find_longest_runs()
+    compare_candidates = [rd for rd, _ in all_runs
+                          if Path(rd).resolve() != Path(best_dir).resolve()]
+    if compare_candidates:
+        second_dir = compare_candidates[0]
         data_b = records_to_arrays(load_run(second_dir))
         if data_b:
-            # Trim to same length for fair comparison
             plot_comparison(data, data_b,
                             Path(best_dir).name, Path(second_dir).name,
                             str(output_dir / "comparison.png"))

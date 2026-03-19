@@ -175,16 +175,17 @@ def test_bond_sharing_equalizes():
     assert e1_after > e1_before - 1.0, "Poor cell should gain energy through sharing (minus bond cost)"
 
 
-def test_bonded_cell_cannot_move():
-    """Bonded cells should be blocked from moving."""
-    from cell.cell_state import init_cell_state, cell_bonds, cell_x
+def test_bonded_cells_move_together():
+    """Bonded pair should move together as a unit when leader fires move."""
+    from cell.cell_state import init_cell_state, cell_bonds, cell_x, cell_y, grid_cell_id
     from cell.genome import init_genome_table, action_outputs
-    from cell.bonding import process_bond
+    from cell.bonding import process_bond, process_bonded_movement
     from cell.actions import clear_intentions, process_movement_phase1, process_movement_phase2
 
     init_cell_state()
     init_genome_table(count=2)
 
+    # Cell 0 at (100,100) facing right, cell 1 at (101,100)
     _place_cell(0, 100, 100, facing=1, genome_id=0)
     _place_cell(1, 101, 100, facing=3, genome_id=1)
 
@@ -195,12 +196,54 @@ def test_bonded_cell_cannot_move():
 
     # Cell 0 tries to move forward (right)
     action_outputs[0, 0] = 0.9
+    action_outputs[0, 6] = 0.0
+    action_outputs[1, 6] = 0.0
 
     clear_intentions()
     process_movement_phase1()
     process_movement_phase2()
+    process_bonded_movement()
 
-    assert cell_x[0] == 100, "Bonded cell should not be able to move"
+    assert cell_x[0] == 101, f"Leader should move right: expected 101, got {cell_x[0]}"
+    assert cell_x[1] == 102, f"Partner should move right: expected 102, got {cell_x[1]}"
+    assert grid_cell_id[100, 100] == -1, "Old leader position should be cleared"
+    assert grid_cell_id[101, 100] == 0, "Leader should be at new position"
+    assert grid_cell_id[102, 100] == 1, "Partner should be at new position"
+
+
+def test_bonded_group_blocked_when_cant_fit():
+    """Bonded pair should NOT move when partner's target is blocked."""
+    from cell.cell_state import init_cell_state, cell_bonds, cell_x
+    from cell.genome import init_genome_table, action_outputs
+    from cell.bonding import process_bond, process_bonded_movement
+    from cell.actions import clear_intentions, process_movement_phase1, process_movement_phase2
+
+    init_cell_state()
+    init_genome_table(count=3)
+
+    # Cell 0 at (100,100) facing right, cell 1 at (101,100)
+    _place_cell(0, 100, 100, facing=1, genome_id=0)
+    _place_cell(1, 101, 100, facing=3, genome_id=1)
+    # Blocker at (102,100) — cell 1's target if group moves right
+    _place_cell(2, 102, 100, facing=0, genome_id=2)
+
+    # Form bond between 0 and 1
+    action_outputs[0, 6] = 0.9
+    action_outputs[1, 6] = 0.9
+    process_bond()
+
+    # Cell 0 tries to move right
+    action_outputs[0, 0] = 0.9
+    action_outputs[0, 6] = 0.0
+    action_outputs[1, 6] = 0.0
+
+    clear_intentions()
+    process_movement_phase1()
+    process_movement_phase2()
+    process_bonded_movement()
+
+    assert cell_x[0] == 100, f"Leader should NOT move: expected 100, got {cell_x[0]}"
+    assert cell_x[1] == 101, f"Partner should NOT move: expected 101, got {cell_x[1]}"
 
 
 def test_death_cleans_bonds():
@@ -277,7 +320,8 @@ if __name__ == "__main__":
         ("bond_formation_mutual", test_bond_formation_mutual),
         ("unbond_unilateral", test_unbond_unilateral),
         ("bond_sharing_equalizes", test_bond_sharing_equalizes),
-        ("bonded_cell_cannot_move", test_bonded_cell_cannot_move),
+        ("bonded_cells_move_together", test_bonded_cells_move_together),
+        ("bonded_group_blocked_when_cant_fit", test_bonded_group_blocked_when_cant_fit),
         ("death_cleans_bonds", test_death_cleans_bonds),
         ("new_sensory_inputs", test_new_sensory_inputs),
     ]

@@ -90,9 +90,9 @@ def test_near_zero_weights_cluster():
     evaluate_all_networks()
 
     # Expected approximate outputs with biased initial genomes:
-    # move(0): bias=0.0→~0.50, divide(5): bias=0.5→~0.62, attack(8): bias=-1→~0.27
+    # move(0): bias=0.0→~0.50, divide(5): bias=0.5→~0.62, attack(8): bias=-0.3→~0.43
     # Others: bias=0→~0.5
-    expected_approx = {0: 0.50, 5: 0.62, 8: 0.27}
+    expected_approx = {0: 0.50, 5: 0.62, 8: 0.43}
     for o in range(NUM_OUTPUTS):
         val = action_outputs[0, o]
         target = expected_approx.get(o, 0.5)
@@ -102,14 +102,27 @@ def test_near_zero_weights_cluster():
 
 def test_mutation_produces_valid_genome():
     """Mutation should produce a genome that evaluates without error."""
-    from cell.genome import init_genome_table, mutate_genome, GENOME_SIZE
+    from cell.cell_state import init_cell_state, cell_alive, cell_genome_id
+    from cell.genome import (
+        init_genome_table, process_mutations, needs_mutation,
+        genome_weights, GENOME_SIZE,
+    )
+    from config import MAX_GENOMES
 
-    init_genome_table(count=1)
-    rng = np.random.default_rng(42)
+    init_cell_state()
+    init_genome_table(count=2)
 
-    weights, changed = mutate_genome(0, rng)
-    assert len(weights) == GENOME_SIZE
-    assert np.all(np.isfinite(weights)), "Mutation produced non-finite weights"
+    # Set up cell 1 as a newly-born cell needing mutation
+    cell_alive[1] = 1
+    cell_genome_id[1] = 0
+    needs_mutation[1] = 1
+
+    process_mutations()
+
+    # Verify the mutated genome has finite weights
+    weights = genome_weights.to_numpy()
+    gid = cell_genome_id[1]
+    assert np.all(np.isfinite(weights[gid])), "Mutation produced non-finite weights"
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ from config import (
     NUM_DEPOSITS_S, NUM_DEPOSITS_R,
     DEPOSIT_CLUSTER_RADIUS, DEPOSIT_CLUSTER_AMOUNT,
     LIGHT_ZONE_END, DIM_ZONE_END,
-    RANDOM_SEED,
+    RANDOM_SEED, R_LIGHT_ZONE_FRACTION,
 )
 
 # Double-buffered chemical fields (environment only — E is internal)
@@ -171,9 +171,29 @@ def init_chemistry(seed: int = RANDOM_SEED):
     _place_clustered_deposits(rng, NUM_DEPOSITS_S, deposit_S_x, deposit_S_y,
                               x_min=LIGHT_ZONE_END, x_max=GRID_WIDTH)
 
-    # R deposits: dim + dark zones only (forces movement to reproduce)
-    _place_clustered_deposits(rng, NUM_DEPOSITS_R, deposit_R_x, deposit_R_y,
+    # R deposits: mostly dim + dark zones, small fraction in light zone
+    n_r_light = int(NUM_DEPOSITS_R * R_LIGHT_ZONE_FRACTION)
+    n_r_outer = NUM_DEPOSITS_R - n_r_light
+    # Place outer deposits into temp arrays, then light zone deposits
+    r_x_all = np.zeros(NUM_DEPOSITS_R, dtype=np.int32)
+    r_y_all = np.zeros(NUM_DEPOSITS_R, dtype=np.int32)
+    # Outer (dim + dark)
+    _tmp_x = ti.field(dtype=ti.i32, shape=(n_r_outer,))
+    _tmp_y = ti.field(dtype=ti.i32, shape=(n_r_outer,))
+    _place_clustered_deposits(rng, n_r_outer, _tmp_x, _tmp_y,
                               x_min=LIGHT_ZONE_END, x_max=GRID_WIDTH)
+    r_x_all[:n_r_outer] = _tmp_x.to_numpy()
+    r_y_all[:n_r_outer] = _tmp_y.to_numpy()
+    # Light zone
+    if n_r_light > 0:
+        _tmp_x2 = ti.field(dtype=ti.i32, shape=(n_r_light,))
+        _tmp_y2 = ti.field(dtype=ti.i32, shape=(n_r_light,))
+        _place_clustered_deposits(rng, n_r_light, _tmp_x2, _tmp_y2,
+                                  x_min=0, x_max=LIGHT_ZONE_END)
+        r_x_all[n_r_outer:] = _tmp_x2.to_numpy()
+        r_y_all[n_r_outer:] = _tmp_y2.to_numpy()
+    deposit_R_x.from_numpy(r_x_all)
+    deposit_R_y.from_numpy(r_y_all)
 
     # Seed initial chemical concentrations at deposit locations
     s_x = deposit_S_x.to_numpy()

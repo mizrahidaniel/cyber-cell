@@ -4,7 +4,10 @@ import numpy as np
 import taichi as ti
 
 from config import MAX_CELLS, MAX_GENOMES, ACTION_THRESHOLD
-from cell.cell_state import cell_alive, cell_energy, cell_age, cell_repmat, cell_x, cell_membrane, cell_bonds
+from cell.cell_state import (
+    cell_alive, cell_energy, cell_age, cell_repmat, cell_x, cell_y,
+    cell_membrane, cell_bonds, cell_genome_id, cell_facing,
+)
 from cell.genome import genome_ref_count, action_outputs
 from cell.lifecycle import deaths_by_attack, deaths_by_starvation
 
@@ -84,6 +87,40 @@ def get_genome_diversity() -> dict:
         "shannon_index": shannon,
         "dominant_fraction": dominant,
     }
+
+
+def get_spatial_snapshot() -> dict:
+    """Capture cell positions, bonds, and genome IDs for spatial analysis."""
+    alive_np = cell_alive.to_numpy() == 1
+    count = int(alive_np.sum())
+
+    if count == 0:
+        return {"positions": np.empty((0, 2), dtype=np.int32),
+                "genome_ids": np.empty(0, dtype=np.int32),
+                "facings": np.empty(0, dtype=np.int32),
+                "bonds": np.empty((0, 2), dtype=np.int32)}
+
+    xs = cell_x.to_numpy()[alive_np]
+    ys = cell_y.to_numpy()[alive_np]
+    positions = np.column_stack([xs, ys]).astype(np.int32)
+    genome_ids = cell_genome_id.to_numpy()[alive_np].astype(np.int32)
+    facings = cell_facing.to_numpy()[alive_np].astype(np.int32)
+
+    # Build bond edge list (unique pairs only)
+    alive_indices = np.where(alive_np)[0]
+    index_map = {int(idx): i for i, idx in enumerate(alive_indices)}
+    bonds_all = cell_bonds.to_numpy()[:MAX_CELLS]
+    bond_pairs = []
+    for local_i, global_i in enumerate(alive_indices):
+        for b in range(4):
+            partner = int(bonds_all[global_i, b])
+            if partner >= 0 and partner in index_map and partner > global_i:
+                bond_pairs.append([local_i, index_map[partner]])
+
+    bonds = np.array(bond_pairs, dtype=np.int32) if bond_pairs else np.empty((0, 2), dtype=np.int32)
+
+    return {"positions": positions, "genome_ids": genome_ids,
+            "facings": facings, "bonds": bonds}
 
 
 def get_predation_stats() -> dict:
