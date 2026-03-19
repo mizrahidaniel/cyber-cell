@@ -16,6 +16,7 @@ python main.py
 python main.py --headless --ticks 100000 --log-interval 5000
 
 # Force a specific backend
+python main.py --backend metal   # macOS (Apple Silicon GPU)
 python main.py --backend cuda    # Windows/NVIDIA
 python main.py --backend cpu     # Any platform
 
@@ -258,13 +259,14 @@ The `--backend auto` mode (default) benchmarks available backends on first run a
 |----------|---------|----------------------|
 | Windows RTX 5080 | CUDA | ~900 |
 | Windows RTX 5080 | CPU | ~450 |
+| macOS M2 Pro | Metal | ~TBD |
 | macOS M2 Pro | CPU | ~50 |
 
 CUDA performance is roughly constant across population sizes (all mutation/evolution logic runs on GPU). Use `--rebenchmark` after significant config changes.
 
 ## Known Issues
 
-- **macOS 15 + Apple Silicon**: Taichi's Metal GPU backend crashes WindowServer ([taichi-dev/taichi#8775](https://github.com/taichi-dev/taichi/issues/8775)). Use `--backend cpu`. Simulation runs fine, just slower than GPU.
+- **macOS Metal + GUI**: Previously reported as crashing WindowServer ([taichi-dev/taichi#8775](https://github.com/taichi-dev/taichi/issues/8775)), but tested working on macOS 15 + Apple Silicon with Taichi 1.7.4. The `--backend auto` mode will benchmark Metal and use it if fastest.
 - **Bonding** (actions 6-7) is parsed but not yet functional. The outputs are read but have no effect.
 
 ## Requirements
