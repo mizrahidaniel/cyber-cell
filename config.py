@@ -31,9 +31,9 @@ E_DECAY_FLAT = 0.02           # flat internal energy decay per tick (not percent
 DECAY_RATE_S = 0.001
 DECAY_RATE_R = 0.001
 DECAY_RATE_G = 0.05
-DEPOSIT_REPLENISH_RATE = 0.008
+DEPOSIT_REPLENISH_RATE = 0.015
 NUM_DEPOSITS_S = 200
-NUM_DEPOSITS_R = 200
+NUM_DEPOSITS_R = 300
 DEPOSIT_CLUSTER_RADIUS = 15
 DEPOSIT_CLUSTER_AMOUNT = 5.0
 
@@ -71,10 +71,10 @@ NETWORK_COST = 0.01
 # Energy income
 # =============================================================================
 PHOTOSYNTHESIS_RATE = 0.5
-S_ENERGY_VALUE = 0.1
-R_ENERGY_VALUE = 0.2
-EAT_ABSORB_CAP = 1.0          # max chemical absorbed per eat action per tick
-PASSIVE_EAT_CAP = 0.02        # max chemical absorbed passively per tick (no neural net)
+S_ENERGY_VALUE = 0.3
+R_ENERGY_VALUE = 0.5
+EAT_ABSORB_CAP = 2.0          # max chemical absorbed per eat action per tick
+PASSIVE_EAT_CAP = 0.05        # max chemical absorbed passively per tick (no neural net)
 ATTACK_MEMBRANE_DAMAGE = 5.0
 
 # =============================================================================
@@ -89,6 +89,7 @@ GENOME_SIZE = (NUM_INPUTS * NETWORK_HIDDEN_SIZE + NETWORK_HIDDEN_SIZE +
                NETWORK_HIDDEN_SIZE * NETWORK_HIDDEN_SIZE + NETWORK_HIDDEN_SIZE +
                NETWORK_HIDDEN_SIZE * NUM_OUTPUTS + NUM_OUTPUTS)
 SEED_WEIGHT_SIGMA = 0.01      # near-zero initial weights to prevent population crash
+GRADIENT_SCALE_S = 3.0        # amplify S gradient for neural network input
 GRADIENT_SCALE_R = 5.0        # amplify R gradient for neural network input
 ACTION_THRESHOLD = 0.5
 

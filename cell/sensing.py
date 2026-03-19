@@ -4,7 +4,7 @@ import taichi as ti
 
 from config import (
     MAX_CELLS, GRID_WIDTH, GRID_HEIGHT, MAX_CELL_AGE, NUM_INPUTS,
-    GRADIENT_SCALE_R,
+    GRADIENT_SCALE_S, GRADIENT_SCALE_R,
 )
 from cell.cell_state import (
     cell_alive, cell_x, cell_y, cell_energy, cell_structure, cell_repmat,
@@ -83,9 +83,9 @@ def compute_sensory_inputs(env_S: ti.template(), env_R: ti.template(),
             ym = (y - 1 + GRID_HEIGHT) % GRID_HEIGHT
 
             sensory_inputs[i, 5] = ti.min(1.0, ti.max(-1.0,
-                (env_S[xp, y] - env_S[xm, y]) * 0.5))
+                (env_S[xp, y] - env_S[xm, y]) * GRADIENT_SCALE_S))
             sensory_inputs[i, 6] = ti.min(1.0, ti.max(-1.0,
-                (env_S[x, yp] - env_S[x, ym]) * 0.5))
+                (env_S[x, yp] - env_S[x, ym]) * GRADIENT_SCALE_S))
 
             # [7]-[8] R gradient (amplified to make R deposits detectable)
             sensory_inputs[i, 7] = ti.min(1.0, ti.max(-1.0,

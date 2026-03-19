@@ -50,7 +50,7 @@ A 500x500 toroidal grid (edges wrap) divided into three zones:
 |<--- Light Zone --->|<--- Dim Zone --->|<--- Dark Zone --->|
 |   x < 166          |  166 <= x < 333  |    x >= 333       |
 |   Full sunlight     |  30% sunlight    |   No sunlight     |
-|                     |                  |   S deposits here |
+|   (no deposits)     |  S + R deposits  |   S + R deposits  |
 ```
 
 A **day/night cycle** (1000 ticks per cycle) modulates light with a sinusoidal curve. During "night" (~500 ticks), all light drops to zero. Cells must accumulate enough energy during the day to survive the night.
@@ -66,7 +66,7 @@ Four chemicals drive the simulation:
 | **R** (Replication) | Required for cell division (R >= 5). Scarce. | Yes | Slow (0.03) | 0.001/tick |
 | **G** (Signal) | Communication chemical. Only produced by cells. | Yes | Fast (0.3) | 0.05/tick |
 
-**Resource deposits** are fixed points on the grid that generate S or R each tick (0.008 units/tick). They create concentration gradients that diffuse outward and decay. S deposits are clustered in the dark zone (right third), R deposits are scattered across the entire grid. This spatial separation of energy (left) and materials (right) creates evolutionary pressure for movement.
+**Resource deposits** are fixed points on the grid that generate S or R each tick (0.015 units/tick). They create concentration gradients that diffuse outward and decay. Both S and R deposits are concentrated in the dim and dark zones (x >= 166), forcing cells to leave the light zone to find replication material. This spatial separation of energy (left) and materials (right) creates strong evolutionary pressure for chemotaxis.
 
 ### The CyberCell
 
@@ -117,7 +117,7 @@ Additionally, **photosynthesis** and **passive eating** (small chemical absorpti
 
 **Income:**
 - Photosynthesis: `light_intensity * 0.5` E/tick (passive, always on)
-- Eating chemicals: 0.1 E per S absorbed, 0.2 E per R absorbed
+- Eating chemicals: 0.3 E per S absorbed, 0.5 E per R absorbed
 
 **Passive drains (every tick):**
 - Basal metabolism: 0.05
@@ -179,7 +179,9 @@ cybercell/
 │   └── renderer.py            # ti.GUI rendering, overlays, stats
 ├── analysis/
 │   ├── metrics.py             # Population stats, Shannon diversity, movement/chemotaxis metrics
-│   └── logger.py              # JSONL snapshots to runs/ directory
+│   ├── logger.py              # JSONL snapshots to runs/ directory
+│   ├── study.py               # Evolutionary dynamics analysis, phase detection, report generation
+│   └── output/                # Generated plots and writeups (from study.py)
 └── tests/
     ├── test_chemistry.py      # Diffusion conservation, wrapping, decay
     ├── test_energy.py         # Photosynthesis, metabolism, death mechanics
@@ -219,9 +221,11 @@ Each simulation tick executes these steps in order:
 - Chemical deposits cycle through the ecosystem
 - Multi-generational populations with genome diversity
 
-### Stage 2 (not yet observed): Chemotaxis
-- Cells evolve directed movement toward resources
-- Multiple survival strategies coexist (mobile foragers vs. stationary)
+### Stage 2 (achieved): Chemotaxis
+- Cells evolved directed movement toward chemical deposits (movement fraction: 4.7% to 63.6%)
+- Population spread from light zone (avg x=86) into the dim zone (avg x=273)
+- Multiple survival strategies coexist (Shannon diversity index: 9.38)
+- See `analysis/output/STUDY.md` for the full writeup and `analysis/output/evolution_report.png` for plots
 
 ### Stage 3 (future): Predator-Prey Dynamics
 - Heterotrophs emerge (cells that attack and consume others)
@@ -229,6 +233,28 @@ Each simulation tick executes these steps in order:
 
 ### Stage 4 (future): Multicellularity
 - Bonded cell clusters with differentiated behavior
+
+## Analysis
+
+After a simulation run, analyze the evolutionary dynamics:
+
+```bash
+# Analyze all runs (picks the longest automatically)
+python analysis/study.py
+
+# Analyze a specific run
+python analysis/study.py runs/20260318_202818
+
+# Compare two runs side by side
+python analysis/study.py --compare runs/<run_a> runs/<run_b>
+```
+
+Outputs are saved to `analysis/output/`:
+- `evolution_report.png` — 6-panel figure (population, movement, spatial, diversity, energy, phases)
+- `comparison.png` — side-by-side comparison of two runs
+- `STUDY.md` — full markdown writeup with detected evolutionary phases and key findings
+
+Requires `matplotlib` (`pip install matplotlib`).
 
 ## Running Tests
 

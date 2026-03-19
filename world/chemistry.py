@@ -167,13 +167,13 @@ def init_chemistry(seed: int = RANDOM_SEED):
     """Place initial chemical deposits and seed the environment."""
     rng = np.random.default_rng(seed)
 
-    # S deposits: concentrated in the dark zone (right third)
+    # S deposits: dim + dark zones (stepping stones for cells leaving light)
     _place_clustered_deposits(rng, NUM_DEPOSITS_S, deposit_S_x, deposit_S_y,
-                              x_min=DIM_ZONE_END, x_max=GRID_WIDTH)
+                              x_min=LIGHT_ZONE_END, x_max=GRID_WIDTH)
 
-    # R deposits: scattered across the entire grid (sparse)
+    # R deposits: dim + dark zones only (forces movement to reproduce)
     _place_clustered_deposits(rng, NUM_DEPOSITS_R, deposit_R_x, deposit_R_y,
-                              x_min=0, x_max=GRID_WIDTH)
+                              x_min=LIGHT_ZONE_END, x_max=GRID_WIDTH)
 
     # Seed initial chemical concentrations at deposit locations
     s_x = deposit_S_x.to_numpy()
