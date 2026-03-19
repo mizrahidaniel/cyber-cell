@@ -17,6 +17,8 @@ def parse_args():
                         help="Number of ticks to run (0 = unlimited)")
     parser.add_argument("--seed", type=int, default=RANDOM_SEED,
                         help="Random seed for reproducibility")
+    parser.add_argument("--log-interval", type=int, default=1000,
+                        help="Ticks between console progress prints (headless mode)")
     return parser.parse_args()
 
 
@@ -30,7 +32,7 @@ def main():
 
     from simulation.engine import SimulationEngine
 
-    engine = SimulationEngine(headless=args.headless)
+    engine = SimulationEngine(headless=args.headless, log_interval=args.log_interval)
     engine.init()
     engine.run(max_ticks=args.ticks)
 

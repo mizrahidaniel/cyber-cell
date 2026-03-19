@@ -26,8 +26,9 @@ from simulation.spawner import seed_cells
 
 
 class SimulationEngine:
-    def __init__(self, headless: bool = False):
+    def __init__(self, headless: bool = False, log_interval: int = 1000):
         self.headless = headless
+        self.log_interval = log_interval
         self.tick_count = 0
         self.mutation_rng = np.random.default_rng(RANDOM_SEED + 100)
         self.renderer = None
@@ -98,15 +99,25 @@ class SimulationEngine:
 
         self.tick_count += 1
 
+    def _print_progress(self):
+        """Print progress stats to console during headless runs."""
+        pop = cell_count[None]
+        genomes = genome_count[None]
+        print(f"[tick {self.tick_count:>8d}] pop={pop:>5d}  genomes={genomes:>5d}")
+
     def run(self, max_ticks: int = 0):
         """Main loop with optional visualization."""
         if self.headless:
             if max_ticks > 0:
                 for _ in range(max_ticks):
                     self.step()
+                    if self.tick_count % self.log_interval == 0:
+                        self._print_progress()
             else:
                 while True:
                     self.step()
+                    if self.tick_count % self.log_interval == 0:
+                        self._print_progress()
         else:
             running = True
             while running:

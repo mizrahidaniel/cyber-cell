@@ -7,6 +7,7 @@ from config import (
     PHOTOSYNTHESIS_RATE, BASAL_METABOLISM, E_DECAY_FLAT, NETWORK_COST,
     ENERGY_ZERO_MEMBRANE_DAMAGE, AGE_MEMBRANE_DECAY, MAX_CELL_AGE,
     EAT_ABSORB_CAP, EAT_COST, S_ENERGY_VALUE, R_ENERGY_VALUE,
+    PASSIVE_EAT_CAP,
 )
 from cell.cell_state import (
     cell_alive, cell_x, cell_y, cell_energy, cell_structure, cell_repmat,
@@ -38,8 +39,7 @@ def eat_passive(env_S: ti.template(), env_R: ti.template()):
             x = cell_x[i]
             y = cell_y[i]
 
-            # Passive absorption: slower than active eating (0.2 cap vs 1.0)
-            passive_cap = 0.2
+            passive_cap = PASSIVE_EAT_CAP
 
             # Absorb S
             avail_s = env_S[x, y]

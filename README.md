@@ -13,7 +13,7 @@ pip install -r requirements.txt
 python main.py
 
 # Run headless (for long evolution runs)
-python main.py --headless --ticks 100000
+python main.py --headless --ticks 100000 --log-interval 5000
 
 # Run with specific backend
 python main.py --backend cuda    # Windows/NVIDIA
@@ -55,7 +55,7 @@ Four chemicals drive the simulation:
 |----------|------|-----------------|-----------|-------|
 | **E** (Energy) | Internal fuel. All actions cost E. Die at 0. | No (internal only) | — | 0.02/tick (flat) |
 | **S** (Structure) | Membrane repair material. | Yes | Slow (0.01) | 0.001/tick |
-| **R** (Replication) | Required for cell division (R >= 5). Scarce. | Yes | Very slow (0.005) | 0.001/tick |
+| **R** (Replication) | Required for cell division (R >= 5). Scarce. | Yes | Slow (0.03) | 0.001/tick |
 | **G** (Signal) | Communication chemical. Only produced by cells. | Yes | Fast (0.3) | 0.05/tick |
 
 **Resource deposits** are fixed points on the grid that generate S or R each tick (0.008 units/tick). They create concentration gradients that diffuse outward and decay. S deposits are clustered in the dark zone (right third), R deposits are scattered across the entire grid. This spatial separation of energy (left) and materials (right) creates evolutionary pressure for movement.
@@ -90,7 +90,7 @@ Each cell occupies one grid position and has:
 
 | # | Action | Energy Cost | Threshold | Description |
 |---|--------|-------------|-----------|-------------|
-| 0 | move_forward | 0.3 | 0.5 | Move one step in facing direction |
+| 0 | move_forward | 0.1 | 0.5 | Move one step in facing direction |
 | 1 | turn_left | 0.02 | 0.5 | Rotate counter-clockwise |
 | 2 | turn_right | 0.02 | 0.5 | Rotate clockwise |
 | 3 | eat | 0.02 | 0.5 | Absorb extra S/R from environment |
@@ -117,7 +117,7 @@ Additionally, **photosynthesis** and **passive eating** (small chemical absorpti
 - Network evaluation: 0.01
 - Total passive: **0.08 E/tick**
 
-A cell in the bright zone at peak daylight earns 0.5 E/tick, giving a net surplus of ~0.42 E/tick. During night, income drops to zero and cells must survive on reserves.
+A cell in the bright zone at peak daylight earns 0.5 E/tick, giving a net surplus of ~0.42 E/tick. Moving costs 0.1 E, making mobile strategies viable (~24% of surplus). During night, income drops to zero and cells must survive on reserves.
 
 **Death conditions:**
 - Membrane reaches 0 → instant death, internal chemicals spill into environment
@@ -133,7 +133,7 @@ A cell in the bright zone at peak daylight earns 0.5 E/tick, giving a net surplu
 4. Daughter receives a (possibly mutated) copy of the parent's genome
 
 **Mutation operators** (applied on division):
-- **Weight perturbation** (p=0.01 per weight): add Gaussian noise (sigma=0.1)
+- **Weight perturbation** (p=0.03 per weight): add Gaussian noise (sigma=0.1)
 - **Weight reset** (p=0.001 per weight): set to random value in [-1, 1]
 - **Node knockout** (p=0.0005 per hidden node): zero all outgoing weights
 
@@ -144,7 +144,7 @@ A cell in the bright zone at peak daylight earns 0.5 E/tick, giving a net surplu
 1,000 cells are placed randomly in the light zone, each with a unique genome. Weights are drawn from N(0, 0.01) so initial behavior is near-random, except for biased output layer biases:
 - Divide (output 5): bias=+0.5 → fires reliably when resources are available
 - Attack (output 8): bias=-1.0 → suppressed to prevent random killing
-- Move (output 0): bias=-0.3 → mostly off initially
+- Move (output 0): bias=0.0 → neutral (easily activated by a single mutation)
 
 This gives cells a viable starting phenotype (photosynthesize, accumulate resources, divide) that evolution can modify.
 
@@ -153,7 +153,7 @@ This gives cells a viable starting phenotype (photosynthesize, accumulate resour
 ```
 cybercell/
 ├── config.py                  # All tunable parameters (single source of truth)
-├── main.py                    # Entry point (CLI args: --headless, --ticks, --backend)
+├── main.py                    # Entry point (CLI args: --headless, --ticks, --backend, --log-interval)
 ├── world/
 │   ├── grid.py                # Light field, zones, day/night cycle
 │   └── chemistry.py           # Chemical fields, diffusion, decay, deposits
@@ -169,7 +169,7 @@ cybercell/
 ├── visualization/
 │   └── renderer.py            # ti.GUI rendering, overlays, stats
 ├── analysis/
-│   ├── metrics.py             # Population stats, Shannon diversity index
+│   ├── metrics.py             # Population stats, Shannon diversity, movement/chemotaxis metrics
 │   └── logger.py              # JSONL snapshots to runs/ directory
 └── tests/
     ├── test_chemistry.py      # Diffusion conservation, wrapping, decay

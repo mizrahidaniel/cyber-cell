@@ -3,9 +3,9 @@
 import numpy as np
 import taichi as ti
 
-from config import MAX_CELLS, MAX_GENOMES
-from cell.cell_state import cell_alive, cell_energy, cell_age, cell_repmat
-from cell.genome import genome_ref_count
+from config import MAX_CELLS, MAX_GENOMES, ACTION_THRESHOLD
+from cell.cell_state import cell_alive, cell_energy, cell_age, cell_repmat, cell_x
+from cell.genome import genome_ref_count, action_outputs
 
 # Birth/death counters (reset periodically)
 births_counter = ti.field(dtype=ti.i32, shape=())
@@ -38,6 +38,27 @@ def get_population_stats() -> dict:
         "avg_repmat": float(repmats.mean()),
         "min_age": int(ages.min()),
         "max_age": int(ages.max()),
+    }
+
+
+def get_movement_stats() -> dict:
+    """Compute movement-related stats for chemotaxis detection."""
+    alive = cell_alive.to_numpy() == 1
+    count = int(alive.sum())
+
+    if count == 0:
+        return {"move_fraction": 0.0, "avg_x_position": 0.0}
+
+    # Fraction of alive cells whose move output exceeds threshold
+    move_outputs = action_outputs.to_numpy()[:MAX_CELLS, 0]
+    movers = (move_outputs[alive] >= ACTION_THRESHOLD).sum()
+
+    # Average x position (rightward shift indicates movement toward dark zone R deposits)
+    x_positions = cell_x.to_numpy()[alive]
+
+    return {
+        "move_fraction": float(movers / count),
+        "avg_x_position": float(x_positions.mean()),
     }
 
 

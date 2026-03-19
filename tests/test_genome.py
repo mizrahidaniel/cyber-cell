@@ -90,9 +90,9 @@ def test_near_zero_weights_cluster():
     evaluate_all_networks()
 
     # Expected approximate outputs with biased initial genomes:
-    # move(0): bias=-0.3→~0.43, divide(5): bias=0.5→~0.62, attack(8): bias=-1→~0.27
+    # move(0): bias=0.0→~0.50, divide(5): bias=0.5→~0.62, attack(8): bias=-1→~0.27
     # Others: bias=0→~0.5
-    expected_approx = {0: 0.43, 5: 0.62, 8: 0.27}
+    expected_approx = {0: 0.50, 5: 0.62, 8: 0.27}
     for o in range(NUM_OUTPUTS):
         val = action_outputs[0, o]
         target = expected_approx.get(o, 0.5)

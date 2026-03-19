@@ -77,11 +77,11 @@ def init_genome_table(count: int = INITIAL_CELL_COUNT, seed: int = RANDOM_SEED):
     # Bias output layer biases for viable starting phenotype:
     #   Output 5 (divide): bias=0.5 → sigmoid(0.5)≈0.62, fires reliably
     #   Output 8 (attack): bias=-1.0 → sigmoid(-1)≈0.27, suppressed
-    #   Output 0 (move): bias=-0.3 → sigmoid(-0.3)≈0.43, mostly off
+    #   Output 0 (move): bias=0.0 → sigmoid(0)=0.5, neutral (one mutation can activate)
     #   Others: bias=0 → 0.5, at threshold boundary
     # Biases are at offsets W3_END to B3_END (positions 1920-1929)
     output_biases = np.array([
-        -0.3,   # 0: move_forward — mostly off initially
+         0.0,   # 0: move_forward — neutral, easily activated by mutation
          0.0,   # 1: turn_left
          0.0,   # 2: turn_right
          0.0,   # 3: eat (passive eating handles this now)
@@ -135,14 +135,19 @@ def deallocate_genome_python(idx: int):
     genome_count[None] = genome_count[None] - 1
 
 
-def mutate_genome(parent_genome_id: int, rng: np.random.Generator) -> tuple[np.ndarray, bool]:
+def mutate_genome(parent_genome_id: int, rng: np.random.Generator,
+                  all_weights: np.ndarray = None) -> tuple[np.ndarray, bool]:
     """Apply mutation operators to a copy of the parent genome.
 
     Returns (mutated_weights, changed) where changed indicates if any mutation occurred.
+    If all_weights is provided, reads from the numpy array instead of per-element field access.
     """
-    weights = np.zeros(GENOME_SIZE, dtype=np.float32)
-    for w in range(GENOME_SIZE):
-        weights[w] = float(genome_weights[parent_genome_id, w])
+    if all_weights is not None:
+        weights = all_weights[parent_genome_id].copy()
+    else:
+        weights = np.zeros(GENOME_SIZE, dtype=np.float32)
+        for w in range(GENOME_SIZE):
+            weights[w] = float(genome_weights[parent_genome_id, w])
 
     changed = False
 
@@ -185,23 +190,36 @@ def process_mutations(rng: np.random.Generator):
     mutation_flags = needs_mutation.to_numpy()
     birth_indices = np.where(mutation_flags == 1)[0]
 
+    if len(birth_indices) == 0:
+        return
+
+    # Batch read: pull all genome weights into numpy once
+    all_weights = genome_weights.to_numpy()
+    genome_ids = cell_genome_id.to_numpy()
+    new_genome_rows = []  # (slot, weights) pairs for batch write
+
     for idx in birth_indices:
-        parent_gid = int(cell_genome_id[idx])
-        weights, changed = mutate_genome(parent_gid, rng)
+        parent_gid = int(genome_ids[idx])
+        weights, changed = mutate_genome(parent_gid, rng, all_weights=all_weights)
 
         if changed:
             new_gid = allocate_genome_python()
             if new_gid >= 0:
-                for w in range(GENOME_SIZE):
-                    genome_weights[new_gid, w] = float(weights[w])
+                all_weights[new_gid] = weights
+                new_genome_rows.append(new_gid)
                 genome_ref_count[new_gid] = 1
                 genome_ref_count[parent_gid] -= 1
                 cell_genome_id[idx] = new_gid
+                genome_ids[idx] = new_gid
             # If allocation failed, keep parent genome
         else:
             genome_ref_count[parent_gid] += 1
 
         needs_mutation[idx] = 0
+
+    # Batch write: push all modified genome weights back at once
+    if new_genome_rows:
+        genome_weights.from_numpy(all_weights)
 
 
 @ti.kernel

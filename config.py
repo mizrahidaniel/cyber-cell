@@ -25,7 +25,7 @@ LIGHT_DARK = 0.0
 # Chemistry
 # =============================================================================
 DIFFUSION_RATE_S = 0.01
-DIFFUSION_RATE_R = 0.005
+DIFFUSION_RATE_R = 0.03
 DIFFUSION_RATE_G = 0.3
 E_DECAY_FLAT = 0.02           # flat internal energy decay per tick (not percentage)
 DECAY_RATE_S = 0.001
@@ -33,7 +33,7 @@ DECAY_RATE_R = 0.001
 DECAY_RATE_G = 0.05
 DEPOSIT_REPLENISH_RATE = 0.008
 NUM_DEPOSITS_S = 200
-NUM_DEPOSITS_R = 150
+NUM_DEPOSITS_R = 200
 DEPOSIT_CLUSTER_RADIUS = 15
 DEPOSIT_CLUSTER_AMOUNT = 5.0
 
@@ -54,7 +54,7 @@ AGE_MEMBRANE_DECAY = 1.0           # membrane loss per tick past max age
 # Energy costs
 # =============================================================================
 BASAL_METABOLISM = 0.05
-MOVE_COST = 0.3
+MOVE_COST = 0.1
 TURN_COST = 0.02
 EAT_COST = 0.02
 SIGNAL_COST = 0.1
@@ -74,6 +74,7 @@ PHOTOSYNTHESIS_RATE = 0.5
 S_ENERGY_VALUE = 0.1
 R_ENERGY_VALUE = 0.2
 EAT_ABSORB_CAP = 1.0          # max chemical absorbed per eat action per tick
+PASSIVE_EAT_CAP = 0.02        # max chemical absorbed passively per tick (no neural net)
 ATTACK_MEMBRANE_DAMAGE = 5.0
 
 # =============================================================================
@@ -88,6 +89,7 @@ GENOME_SIZE = (NUM_INPUTS * NETWORK_HIDDEN_SIZE + NETWORK_HIDDEN_SIZE +
                NETWORK_HIDDEN_SIZE * NETWORK_HIDDEN_SIZE + NETWORK_HIDDEN_SIZE +
                NETWORK_HIDDEN_SIZE * NUM_OUTPUTS + NUM_OUTPUTS)
 SEED_WEIGHT_SIGMA = 0.01      # near-zero initial weights to prevent population crash
+GRADIENT_SCALE_R = 5.0        # amplify R gradient for neural network input
 ACTION_THRESHOLD = 0.5
 
 # Weight layout offsets
@@ -101,7 +103,7 @@ B3_END = W3_END + NUM_OUTPUTS                                # 1930
 # =============================================================================
 # Mutation
 # =============================================================================
-MUTATION_RATE_PERTURB = 0.01
+MUTATION_RATE_PERTURB = 0.03
 MUTATION_SIGMA = 0.1
 MUTATION_RATE_RESET = 0.001
 MUTATION_RATE_KNOCKOUT = 0.0005
