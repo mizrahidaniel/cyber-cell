@@ -8,10 +8,6 @@ import taichi as ti
 import numpy as np
 
 
-def setup_module():
-    ti.init(arch=ti.cpu, random_seed=42)
-
-
 def _place_cell(slot, x, y, energy=50.0, membrane=100.0, genome_id=0, facing=0):
     """Helper to place a cell at a given position."""
     from cell.cell_state import (
@@ -280,7 +276,7 @@ def test_new_sensory_inputs():
     from cell.cell_state import init_cell_state
     from cell.genome import init_genome_table, sensory_inputs
     from cell.sensing import compute_sensory_inputs
-    from world.chemistry import env_S_a, env_R_a, env_G_a, init_chemistry
+    from world.chemistry import env_S_a, env_R_a, env_G_a, env_W_a, init_chemistry
     from world.grid import init_grid, compute_light
 
     init_cell_state()
@@ -293,7 +289,7 @@ def test_new_sensory_inputs():
     _place_cell(0, 100, 100, energy=50.0, facing=1, genome_id=0)
     _place_cell(1, 101, 100, energy=75.0, membrane=80.0, facing=0, genome_id=1)
 
-    compute_sensory_inputs(env_S_a, env_R_a, env_G_a)
+    compute_sensory_inputs(env_S_a, env_R_a, env_G_a, env_W_a)
 
     # Input 11: cell ahead should be 1.0
     assert abs(sensory_inputs[0, 11] - 1.0) < 0.01, "Should detect cell ahead"
@@ -312,7 +308,7 @@ def test_new_sensory_inputs():
 
 
 if __name__ == "__main__":
-    setup_module()
+    ti.init(arch=ti.cpu, random_seed=42)
 
     tests = [
         ("attack_damages_membrane", test_attack_damages_membrane),

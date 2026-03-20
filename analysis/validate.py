@@ -448,11 +448,19 @@ def check_results(results: dict) -> list[tuple[str, bool, str]]:
             detail = f"peak waste={peak:.2f} (target <50)"
             checks.append(("Waste not runaway", passed, detail))
 
+    # 13. Waste creates pressure
+    if getattr(_cfg2, 'WASTE_ENABLED', False) and waste_samples:
+        late_samples = waste_samples[len(waste_samples)//2:] if len(waste_samples) > 4 else waste_samples
+        avg_late_waste = np.mean(late_samples)
+        passed = avg_late_waste > 0.05
+        detail = f"avg waste at cells (late)={avg_late_waste:.4f} (target >0.05)"
+        checks.append(("Waste creates pressure", passed, detail))
+
     # CRN-specific checks
     if results["genome_type"] == "crn":
-        # CRN population target (lower with light attenuation enabled)
+        # CRN population target (lower with waste + attenuation combined pressure)
         import config as _cfg
-        pop_target = 75 if getattr(_cfg, 'LIGHT_ATTENUATION_ENABLED', False) else 200
+        pop_target = 50 if getattr(_cfg, 'LIGHT_ATTENUATION_ENABLED', False) else 200
         passed = final_pop > pop_target
         detail = f"final_pop={final_pop} (target >{pop_target})"
         checks.append((f"CRN: Population > {pop_target}", passed, detail))

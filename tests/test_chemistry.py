@@ -8,10 +8,6 @@ import taichi as ti
 import numpy as np
 
 
-def setup_module():
-    ti.init(arch=ti.cpu, random_seed=42)
-
-
 def _total(field):
     """Sum all values in a Taichi field."""
     return float(field.to_numpy().sum())
@@ -131,7 +127,7 @@ def test_night_is_dark():
 
 
 if __name__ == "__main__":
-    setup_module()
+    ti.init(arch=ti.cpu, random_seed=42)
     test_diffusion_conserves_mass_without_decay()
     print("PASS: diffusion_conserves_mass_without_decay")
     test_decay_reduces_total()

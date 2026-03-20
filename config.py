@@ -43,18 +43,18 @@ DEPOSIT_RELOCATE_FRACTION = 0.2   # fraction of deposits relocated each interval
 # Light Attenuation (Beer-Lambert density-dependent shading)
 # =============================================================================
 LIGHT_ATTENUATION_ENABLED = True
-LIGHT_ATTENUATION_K = 0.03      # extinction coefficient per neighbor (74% at density 10, 55% at density 20)
+LIGHT_ATTENUATION_K = 0.02      # extinction coefficient per neighbor (82% at density 10, 67% at density 20)
 LIGHT_ATTENUATION_RADIUS = 2    # neighborhood radius for density count
 
 # =============================================================================
 # Metabolic Waste (photosynthesis byproduct, local toxicity)
 # =============================================================================
 WASTE_ENABLED = True
-WASTE_PRODUCTION_RATE = 0.01     # waste per unit energy gained from photosynthesis
+WASTE_PRODUCTION_RATE = 0.03     # waste per unit energy gained (SS isolated ~0.26, cluster interior ~0.50)
 WASTE_DECAY_RATE = 0.002         # per-tick decay (half-life ~350 ticks)
 WASTE_DIFFUSION_RATE = 0.05      # 5% spreads per tick (same as signal)
-WASTE_TOXICITY_THRESHOLD = 0.5   # waste above this causes membrane damage
-WASTE_TOXICITY_RATE = 0.05       # membrane damage per tick per unit waste above threshold
+WASTE_TOXICITY_THRESHOLD = 0.3   # cluster edges (~0.40) take damage; isolated cells (0.26) safe
+WASTE_TOXICITY_RATE = 0.2        # membrane damage per tick per unit waste above threshold
 
 # =============================================================================
 # Archipelago (soft-wall quadrant partitioning)

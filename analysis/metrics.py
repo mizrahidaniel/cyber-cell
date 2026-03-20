@@ -267,11 +267,20 @@ def get_waste_stats() -> dict:
     waste_np = get_env_W().to_numpy()
     cell_waste = waste_np[xs, ys]
 
-    return {
+    result = {
         "avg_waste_at_cells": float(cell_waste.mean()),
         "max_waste": float(waste_np.max()),
         "waste_gt_threshold_frac": float((cell_waste > WASTE_TOXICITY_THRESHOLD).mean()),
     }
+
+    # Per-zone waste breakdown
+    bright_mask = xs < LIGHT_ZONE_END
+    dim_mask = (xs >= LIGHT_ZONE_END) & (xs < DIM_ZONE_END)
+    result["waste_at_cells_bright"] = float(cell_waste[bright_mask].mean()) if bright_mask.any() else 0.0
+    result["waste_at_cells_dim"] = float(cell_waste[dim_mask].mean()) if dim_mask.any() else 0.0
+    result["waste_bright_zone_mean"] = float(waste_np[:LIGHT_ZONE_END, :].mean())
+
+    return result
 
 
 def get_predation_stats() -> dict:

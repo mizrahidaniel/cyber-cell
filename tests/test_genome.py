@@ -8,10 +8,6 @@ import taichi as ti
 import numpy as np
 
 
-def setup_module():
-    ti.init(arch=ti.cpu, random_seed=42)
-
-
 def test_network_outputs_in_range():
     """Network outputs should be in [0, 1] (sigmoid)."""
     from cell.cell_state import init_cell_state, cell_alive, cell_genome_id
@@ -126,7 +122,7 @@ def test_mutation_produces_valid_genome():
 
 
 if __name__ == "__main__":
-    setup_module()
+    ti.init(arch=ti.cpu, random_seed=42)
     test_network_outputs_in_range()
     print("PASS: network_outputs_in_range")
     test_zero_weights_produce_half()

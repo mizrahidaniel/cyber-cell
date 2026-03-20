@@ -175,7 +175,28 @@ def detect_phases(data: dict[str, np.ndarray]) -> list[dict]:
                         })
                     break
 
-    # Phase 7: Bonding — bond_fraction exceeds 1% sustained
+    # Phase 7: Waste Pressure — waste_gt_threshold_frac exceeds 5% for 3+ consecutive snapshots
+    if "waste_gt_threshold_frac" in data:
+        wgt = data["waste_gt_threshold_frac"]
+        consecutive = 0
+        for i in range(len(wgt)):
+            if wgt[i] > 0.05:
+                consecutive += 1
+                if consecutive >= 3:
+                    start_idx = i - consecutive + 1
+                    if start_idx >= 0 and start_idx < len(ticks):
+                        phases.append({
+                            "name": "Waste Pressure",
+                            "start_tick": int(ticks[start_idx]),
+                            "end_tick": int(ticks[-1]),
+                            "description": f">{5}% of cells above toxicity threshold from tick "
+                                           f"{int(ticks[start_idx])}, peak {wgt.max():.1%}",
+                        })
+                    break
+            else:
+                consecutive = 0
+
+    # Phase 8: Bonding — bond_fraction exceeds 1% sustained
     if "bond_fraction" in data:
         bonds = data["bond_fraction"]
         window = min(5, len(bonds))
@@ -280,12 +301,12 @@ def compute_rates(data: dict[str, np.ndarray]) -> dict:
 
 def plot_single_run(data: dict[str, np.ndarray], phases: list[dict],
                     title: str, output_path: str):
-    """Generate a comprehensive 6-panel figure for a single run."""
+    """Generate a comprehensive 8-panel figure for a single run."""
     ticks = data["tick"] / 1000  # convert to thousands
 
-    fig = plt.figure(figsize=(16, 14))
+    fig = plt.figure(figsize=(16, 18))
     fig.suptitle(title, fontsize=16, fontweight="bold", y=0.98)
-    gs = GridSpec(3, 2, figure=fig, hspace=0.35, wspace=0.3)
+    gs = GridSpec(4, 2, figure=fig, hspace=0.35, wspace=0.3)
 
     # Color for zone backgrounds
     zone_colors = {"light": "#ffffcc", "dim": "#ffe0b2", "dark": "#e0e0e0"}
@@ -371,6 +392,49 @@ def plot_single_run(data: dict[str, np.ndarray], phases: list[dict],
         ax6.text(0.5, 0.5, "No phases detected\n(run may be too short)",
                  ha="center", va="center", transform=ax6.transAxes, fontsize=12)
     ax6.grid(True, alpha=0.3, axis="x")
+
+    # --- Panel 7: Waste Trajectory ---
+    ax7 = fig.add_subplot(gs[3, 0])
+    waste_key = "avg_waste_at_cells"
+    if waste_key in data:
+        ax7.plot(ticks, data[waste_key], color="#d84315", linewidth=1.5, label="Avg Waste at Cells")
+        from config import WASTE_TOXICITY_THRESHOLD
+        ax7.axhline(y=WASTE_TOXICITY_THRESHOLD, color="red", linestyle="--", alpha=0.6,
+                     label=f"Toxicity threshold ({WASTE_TOXICITY_THRESHOLD})")
+        ax7.set_ylabel("Waste Concentration", fontsize=11)
+        ax7.legend(fontsize=8, loc="upper left")
+        if "waste_gt_threshold_frac" in data:
+            ax7_twin = ax7.twinx()
+            ax7_twin.plot(ticks, data["waste_gt_threshold_frac"] * 100,
+                          color="#ff6f00", linewidth=1, alpha=0.7, label="% Above Threshold")
+            ax7_twin.set_ylabel("% Cells Above Threshold", fontsize=10, color="#ff6f00")
+            ax7_twin.legend(fontsize=8, loc="upper right")
+    else:
+        ax7.text(0.5, 0.5, "No waste data\n(pre-v7.0 run)",
+                 ha="center", va="center", transform=ax7.transAxes, fontsize=12)
+    ax7.set_xlabel("Ticks (thousands)", fontsize=10)
+    ax7.set_title("Waste Pressure", fontsize=12, fontweight="bold")
+    ax7.grid(True, alpha=0.3)
+
+    # --- Panel 8: Zone Population ---
+    ax8 = fig.add_subplot(gs[3, 1])
+    if "bright_pct" in data and "dim_pct" in data and "dark_pct" in data:
+        ax8.fill_between(ticks, 0, data["bright_pct"] * 100,
+                         color="#ffffcc", label="Bright", alpha=0.9)
+        ax8.fill_between(ticks, data["bright_pct"] * 100,
+                         (data["bright_pct"] + data["dim_pct"]) * 100,
+                         color="#ffe0b2", label="Dim", alpha=0.9)
+        ax8.fill_between(ticks, (data["bright_pct"] + data["dim_pct"]) * 100,
+                         100, color="#bdbdbd", label="Dark", alpha=0.9)
+        ax8.set_ylim(0, 100)
+        ax8.set_ylabel("Population %", fontsize=11)
+        ax8.legend(fontsize=9, loc="center right")
+    else:
+        ax8.text(0.5, 0.5, "No zone data\n(pre-v7.0 run)",
+                 ha="center", va="center", transform=ax8.transAxes, fontsize=12)
+    ax8.set_xlabel("Ticks (thousands)", fontsize=10)
+    ax8.set_title("Zone Population Distribution", fontsize=12, fontweight="bold")
+    ax8.grid(True, alpha=0.3)
 
     plt.savefig(output_path, dpi=150, bbox_inches="tight", facecolor="white")
     plt.close()
@@ -544,6 +608,26 @@ def generate_report(run_dir: str, data: dict, phases: list[dict],
                  f"({rates['max_age_observed']/5000:.0f}x the nominal max age of 5,000) "
                  f"indicates lineages with exceptional survival ability.")
     lines.append(f"")
+
+    # Environmental pressure section (waste + zones)
+    if "avg_waste_at_cells" in data or "bright_pct" in data:
+        lines.append(f"### 6. Environmental Pressure")
+        lines.append(f"")
+        lines.append(f"| Metric | Value |")
+        lines.append(f"|--------|-------|")
+        if "avg_waste_at_cells" in data:
+            lines.append(f"| Avg waste at cells | {data['avg_waste_at_cells'][-1]:.4f} |")
+        if "max_waste" in data:
+            lines.append(f"| Peak waste | {data['max_waste'].max():.4f} |")
+        if "waste_gt_threshold_frac" in data:
+            lines.append(f"| Cells above toxicity | {data['waste_gt_threshold_frac'][-1]:.1%} |")
+        if "bright_pct" in data:
+            lines.append(f"| Bright zone | {data['bright_pct'][-1]:.1%} |")
+        if "dim_pct" in data:
+            lines.append(f"| Dim zone | {data['dim_pct'][-1]:.1%} |")
+        if "dark_pct" in data:
+            lines.append(f"| Dark zone | {data['dark_pct'][-1]:.1%} |")
+        lines.append(f"")
 
     lines.append(f"## Evolutionary Phases Detected")
     lines.append(f"")

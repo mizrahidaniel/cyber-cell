@@ -211,6 +211,39 @@ def plot_comparison(dir_a: str, dir_b: str, output_dir: str):
     elif os.path.exists(a_crn_path):
         _plot_crn_comparison(None, a_crn_path, output_dir)
 
+    # ── Figure 4: Environmental Pressure ──
+    env_keys = [
+        ("avg_waste_at_cells", "Avg Waste at Cells"),
+        ("max_waste", "Peak Waste"),
+        ("waste_gt_threshold_frac", "Cells Above Toxicity Threshold"),
+        ("bright_pct", "Bright Zone %"),
+        ("dim_pct", "Dim Zone %"),
+        ("avg_local_density", "Avg Local Density"),
+    ]
+    # Check if any env keys exist in either run
+    has_env = any(key in m for m in (n_metrics + c_metrics) for key, _ in env_keys)
+    if has_env:
+        fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+        fig.suptitle(f"{label_a} vs {label_b}: Environmental Pressure",
+                     fontsize=14, fontweight="bold")
+        for idx, (key, title) in enumerate(env_keys):
+            ax = axes[idx // 3, idx % 3]
+            if n_metrics:
+                t, v = extract_series(n_metrics, key)
+                if len(t) > 0:
+                    ax.plot(t, v, "b-", linewidth=0.8, alpha=0.8, label=label_a)
+            if c_metrics:
+                t, v = extract_series(c_metrics, key)
+                if len(t) > 0:
+                    ax.plot(t, v, "r-", linewidth=0.8, alpha=0.8, label=label_b)
+            ax.set_title(title)
+            ax.set_xlabel("Tick")
+            ax.legend(fontsize=8)
+            ax.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, "comparison_env.png"), dpi=150)
+        plt.close()
+
     # ── Summary report ──
     report_lines = [f"# {label_a} vs {label_b} Comparison Report\n"]
 
@@ -254,6 +287,20 @@ def plot_comparison(dir_a: str, dir_b: str, output_dir: str):
                 report_lines.append(f"- **Ecology Evenness:** {eco.mean():.3f}")
             if len(mi) > 0:
                 report_lines.append(f"- **Mutual Information:** {mi.mean():.4f}")
+
+        # Waste and zone stats
+        _, waste = extract_series(metrics, "avg_waste_at_cells")
+        if len(waste) > 0:
+            report_lines.append(f"- **Avg Waste at Cells:** {waste.mean():.4f}")
+        _, wgt = extract_series(metrics, "waste_gt_threshold_frac")
+        if len(wgt) > 0:
+            report_lines.append(f"- **Cells Above Toxicity:** {wgt.mean():.1%}")
+        _, bright = extract_series(metrics, "bright_pct")
+        if len(bright) > 0:
+            report_lines.append(f"- **Bright Zone %:** {bright.mean():.1%}")
+        _, dim = extract_series(metrics, "dim_pct")
+        if len(dim) > 0:
+            report_lines.append(f"- **Dim Zone %:** {dim.mean():.1%}")
 
     report = "\n".join(report_lines)
     report_path = os.path.join(output_dir, "comparison_report.md")

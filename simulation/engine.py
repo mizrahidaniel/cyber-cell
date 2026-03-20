@@ -17,7 +17,7 @@ from config import (
 from world.grid import compute_light, init_grid, compute_local_density, apply_light_attenuation
 from world.chemistry import (
     diffuse_all, replenish_deposits, swap_buffers, init_chemistry,
-    get_env_S, get_env_R, get_env_G, _get_dst_W,
+    get_env_S, get_env_R, get_env_G, get_env_W, _get_dst_W,
     get_current_buffer, set_current_buffer, relocate_deposits,
 )
 from cell.cell_state import init_cell_state, cell_count
@@ -190,16 +190,17 @@ class SimulationEngine:
         env_S = get_env_S()
         env_R = get_env_R()
         env_G = get_env_G()
-        env_W = _get_dst_W()  # write buffer for waste production
+        env_W_read = get_env_W()       # read buffer for sensing + toxicity
+        env_W_write = _get_dst_W()     # write buffer for waste production
 
         # 2. Passive processes (always on, not gated by neural net)
-        photosynthesis(env_S, env_R, env_W)
+        photosynthesis(env_S, env_R, env_W_write)
         eat_passive(env_S, env_R)
         if WASTE_ENABLED:
-            apply_waste_toxicity(env_W)
+            apply_waste_toxicity(env_W_read)
 
         # 3. Sense -> Think -> Act
-        compute_sensory_inputs(env_S, env_R, env_G)
+        compute_sensory_inputs(env_S, env_R, env_G, env_W_read)
         if GENOME_TYPE == "crn":
             from cell.crn_genome import evaluate_all_crns
             evaluate_all_crns()

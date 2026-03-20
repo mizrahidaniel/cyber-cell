@@ -1,6 +1,7 @@
 """Compute all 34 sensory inputs for every alive cell in parallel.
 
 Inputs [0..17]: original 18 sensory channels (light, internal state, gradients, neighbors).
+  Input [15]: waste concentration at cell position (if WASTE_ENABLED), else age.
 Inputs [18..33]: bond signal channels (4 bonds × 4 channels each).
 """
 
@@ -9,7 +10,7 @@ import taichi as ti
 from config import (
     MAX_CELLS, GRID_WIDTH, GRID_HEIGHT, MAX_CELL_AGE, NUM_INPUTS,
     GRADIENT_SCALE_S, GRADIENT_SCALE_R, BOND_SIGNAL_CHANNELS,
-    GRADIENT_NOISE_SIGMA,
+    GRADIENT_NOISE_SIGMA, WASTE_ENABLED,
 )
 from cell.cell_state import (
     cell_alive, cell_x, cell_y, cell_energy, cell_structure, cell_repmat,
@@ -67,7 +68,7 @@ def cell_at(x: ti.i32, y: ti.i32) -> ti.i32:
 
 @ti.kernel
 def compute_sensory_inputs(env_S: ti.template(), env_R: ti.template(),
-                           env_G: ti.template()):
+                           env_G: ti.template(), env_W: ti.template()):
     """Fill sensory_inputs[i, 0..17] for all alive cells."""
     for i in range(MAX_CELLS):
         if cell_alive[i] == 1:
@@ -152,9 +153,12 @@ def compute_sensory_inputs(env_S: ti.template(), env_R: ti.template(),
                     bonds += 1
             sensory_inputs[i, 14] = ti.cast(bonds, ti.f32) / 4.0
 
-            # [15] age normalized
-            sensory_inputs[i, 15] = ti.cast(cell_age[i], ti.f32) / ti.cast(
-                MAX_CELL_AGE, ti.f32)
+            # [15] waste concentration at cell position (or age if waste disabled)
+            if ti.static(WASTE_ENABLED):
+                sensory_inputs[i, 15] = ti.min(1.0, env_W[cell_x[i], cell_y[i]])
+            else:
+                sensory_inputs[i, 15] = ti.cast(cell_age[i], ti.f32) / ti.cast(
+                    MAX_CELL_AGE, ti.f32)
 
             # [18..33] bond signal inputs: 4 bonds × 4 channels
             for b in range(4):

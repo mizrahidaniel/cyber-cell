@@ -8,10 +8,6 @@ import taichi as ti
 import numpy as np
 
 
-def setup_module():
-    ti.init(arch=ti.cpu, random_seed=42)
-
-
 def _setup_single_cell(x=50, y=50, energy=50.0, structure=25.0, repmat=5.0,
                         membrane=100.0):
     """Helper: initialize state and place a single cell."""
@@ -52,7 +48,7 @@ def test_photosynthesis_in_light():
     from cell.cell_state import cell_energy
     from cell.lifecycle import photosynthesis
     from world.grid import compute_light
-    from world.chemistry import get_env_S, get_env_R
+    from world.chemistry import get_env_S, get_env_R, _get_dst_W
     from config import DAY_LENGTH, PHOTOSYNTHESIS_RATE
 
     slot = _setup_single_cell(x=50, y=50, energy=10.0)
@@ -61,7 +57,7 @@ def test_photosynthesis_in_light():
     compute_light(DAY_LENGTH // 4)
 
     initial_energy = cell_energy[slot]
-    photosynthesis(get_env_S(), get_env_R())
+    photosynthesis(get_env_S(), get_env_R(), _get_dst_W())
     gained = cell_energy[slot] - initial_energy
 
     # Should gain approximately PHOTOSYNTHESIS_RATE * 1.0 (bright zone, peak day)
@@ -74,7 +70,7 @@ def test_photosynthesis_in_dark():
     from cell.cell_state import cell_energy
     from cell.lifecycle import photosynthesis
     from world.grid import compute_light
-    from world.chemistry import get_env_S, get_env_R
+    from world.chemistry import get_env_S, get_env_R, _get_dst_W
     from config import DAY_LENGTH, DIM_ZONE_END
 
     slot = _setup_single_cell(x=DIM_ZONE_END + 50, y=50, energy=10.0)
@@ -82,7 +78,7 @@ def test_photosynthesis_in_dark():
     compute_light(DAY_LENGTH // 4)
 
     initial_energy = cell_energy[slot]
-    photosynthesis(get_env_S(), get_env_R())
+    photosynthesis(get_env_S(), get_env_R(), _get_dst_W())
     gained = cell_energy[slot] - initial_energy
 
     assert abs(gained) < 0.01, f"Dark zone cell gained energy: {gained}"
@@ -157,7 +153,7 @@ def test_membrane_damage_at_zero_energy():
 
 
 if __name__ == "__main__":
-    setup_module()
+    ti.init(arch=ti.cpu, random_seed=42)
     test_photosynthesis_in_light()
     print("PASS: photosynthesis_in_light")
     test_photosynthesis_in_dark()

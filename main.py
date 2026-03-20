@@ -128,11 +128,36 @@ def parse_args():
                         help="Random seed for reproducibility")
     parser.add_argument("--log-interval", type=int, default=1000,
                         help="Ticks between console progress prints (headless mode)")
+    parser.add_argument("--skip-tests", action="store_true",
+                        help="Skip pre-flight test suite")
     return parser.parse_args()
 
 
 def get_arch(backend: str):
     return {"cpu": ti.cpu, "metal": ti.metal, "cuda": ti.cuda}[backend]
+
+
+def run_preflight_tests():
+    """Run the test suite in a subprocess. Returns True if all tests pass."""
+    print("[preflight] Running test suite...")
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "tests/", "-x", "-q", "--tb=short"],
+        capture_output=True, text=True, timeout=120,
+        cwd=os.path.dirname(__file__) or ".",
+    )
+    if result.returncode == 0:
+        # Extract summary line (e.g. "28 passed in 9.82s")
+        for line in result.stdout.strip().splitlines()[-3:]:
+            if "passed" in line:
+                print(f"[preflight] {line.strip()}")
+                break
+        return True
+    else:
+        print("[preflight] TESTS FAILED — fix before running simulation:")
+        print(result.stdout)
+        if result.stderr:
+            print(result.stderr)
+        return False
 
 
 def main():
@@ -141,6 +166,11 @@ def main():
     if args.genome:
         import config
         config.GENOME_TYPE = args.genome
+
+    # Pre-flight tests
+    if not args.skip_tests:
+        if not run_preflight_tests():
+            sys.exit(1)
 
     backend = args.backend
     if backend == "auto":

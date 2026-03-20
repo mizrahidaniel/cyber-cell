@@ -8,10 +8,6 @@ import taichi as ti
 import numpy as np
 
 
-def setup_module():
-    ti.init(arch=ti.cpu, random_seed=42)
-
-
 def test_division_requires_resources():
     """Division should fail without sufficient energy and replication material."""
     from cell.cell_state import (
@@ -130,7 +126,7 @@ def test_division_fails_when_surrounded():
 
 
 if __name__ == "__main__":
-    setup_module()
+    ti.init(arch=ti.cpu, random_seed=42)
     test_division_requires_resources()
     print("PASS: division_requires_resources")
     test_division_splits_resources()

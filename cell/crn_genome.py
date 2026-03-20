@@ -47,7 +47,7 @@ MR = MAX_REACTIONS                # 16
 PPR = CRN_PARAMS_PER_REACTION    # 7
 REACT_END = MR * PPR             # 112
 
-# Chem 0-7 <- sensory_inputs[idx]: light, energy, structure, S_gx, S_gy, cell_ahead, bonds, age
+# Chem 0-7 <- sensory_inputs[idx]: light, energy, structure, S_gx, S_gy, cell_ahead, bonds, waste
 _SENSORY_MAP = ti.field(dtype=ti.i32, shape=(NS,))
 # Chem 12-15 -> action_outputs[idx]: eat, move_forward, divide, attack
 _ACTION_MAP = ti.field(dtype=ti.i32, shape=(NA,))
