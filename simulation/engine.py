@@ -10,7 +10,7 @@ import numpy as np
 from config import (
     GENOME_GC_INTERVAL, RANDOM_SEED, SNAPSHOT_INTERVAL,
     DEPOSIT_RELOCATE_INTERVAL, ARCHIPELAGO_ENABLED, MIGRATION_INTERVAL,
-    GENOME_TYPE,
+    GENOME_TYPE, MIN_POPULATION, RESPAWN_INTERVAL,
 )
 
 from world.grid import compute_light, init_grid
@@ -38,7 +38,7 @@ from cell.bonding import (
     process_bonded_movement, process_bond_strength_update,
     process_bond_signal_relay,
 )
-from simulation.spawner import seed_cells
+from simulation.spawner import seed_cells, respawn_cells
 
 # Auto-switch thresholds (benchmarked: CUDA wins up to ~10K, CPU wins above ~15K)
 _SWITCH_CHECK_INTERVAL = 500      # ticks between population checks
@@ -64,6 +64,7 @@ class SimulationEngine:
         self.backend = backend
         self.auto_switch = auto_switch and backend in ("cpu", "cuda")
         self._switch_streak = 0  # consecutive checks wanting a switch
+        self._last_respawn_tick = -RESPAWN_INTERVAL  # allow immediate first respawn
 
     def init(self):
         """Initialize all simulation subsystems from scratch."""
@@ -233,7 +234,14 @@ class SimulationEngine:
         # 6. Swap diffusion buffers
         swap_buffers()
 
-        # 7. Periodic deposit relocation
+        # 7. Emergency respawn if population too low
+        pop = cell_count[None]
+        if (pop < MIN_POPULATION and
+                self.tick_count - self._last_respawn_tick >= RESPAWN_INTERVAL):
+            n = respawn_cells()
+            self._last_respawn_tick = self.tick_count
+
+        # 7b. Periodic deposit relocation
         if self.tick_count > 0 and self.tick_count % DEPOSIT_RELOCATE_INTERVAL == 0:
             relocate_deposits()
 

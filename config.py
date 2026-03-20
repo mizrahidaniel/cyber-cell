@@ -59,6 +59,9 @@ GRADIENT_NOISE_SIGMA = 0.15       # Gaussian noise on gradient sensing
 # =============================================================================
 MAX_CELLS = 50000
 INITIAL_CELL_COUNT = 1000
+MIN_POPULATION = 50               # respawn threshold to prevent stochastic extinction
+RESPAWN_COUNT = 100               # cells to add when below MIN_POPULATION
+RESPAWN_INTERVAL = 5000           # min ticks between respawns
 MAX_CELL_AGE = 5000
 INITIAL_ENERGY = 35.0
 INITIAL_STRUCTURE = 25.0

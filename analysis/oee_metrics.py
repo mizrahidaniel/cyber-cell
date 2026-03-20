@@ -83,7 +83,7 @@ class OEEMetrics:
         self._metric_history.append(metrics)
         if len(self._metric_history) > self.window_size:
             self._metric_history.pop(0)
-        metrics["plateaued"] = self._detect_plateau()
+        metrics["plateaued"] = bool(self._detect_plateau())
 
         return metrics
 
