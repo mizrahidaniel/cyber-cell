@@ -40,6 +40,16 @@ DEPOSIT_RELOCATE_INTERVAL = 25000 # ticks between partial deposit relocation
 DEPOSIT_RELOCATE_FRACTION = 0.2   # fraction of deposits relocated each interval
 
 # =============================================================================
+# Archipelago (soft-wall quadrant partitioning)
+# =============================================================================
+ARCHIPELAGO_ENABLED = True
+NUM_ISLANDS = 4               # 2x2 quadrant grid on the 500x500 world
+MIGRATION_INTERVAL = 5000     # ticks between migration events
+MIGRATION_COUNT = 10          # cells migrated per island per event
+ISLAND_ENV_VARIANCE = 0.2     # ±20% parameter variance between quadrants
+ISLAND_BOUNDARY_DIFFUSION = 0.002  # diffusion rate across quadrant boundaries (<<normal)
+
+# =============================================================================
 # Sensing
 # =============================================================================
 GRADIENT_NOISE_SIGMA = 0.15       # Gaussian noise on gradient sensing

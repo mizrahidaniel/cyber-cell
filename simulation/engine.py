@@ -7,7 +7,10 @@ import sys
 
 import numpy as np
 
-from config import GENOME_GC_INTERVAL, RANDOM_SEED, SNAPSHOT_INTERVAL, DEPOSIT_RELOCATE_INTERVAL
+from config import (
+    GENOME_GC_INTERVAL, RANDOM_SEED, SNAPSHOT_INTERVAL,
+    DEPOSIT_RELOCATE_INTERVAL, ARCHIPELAGO_ENABLED, MIGRATION_INTERVAL,
+)
 
 from world.grid import compute_light, init_grid
 from world.chemistry import (
@@ -67,6 +70,10 @@ class SimulationEngine:
         init_cell_state()
         init_genome_table()
         seed_cells()
+
+        if ARCHIPELAGO_ENABLED:
+            from world.archipelago import init_archipelago
+            init_archipelago()
 
         from analysis.logger import SimulationLogger
         self.logger = SimulationLogger()
@@ -209,6 +216,12 @@ class SimulationEngine:
         # 7. Periodic deposit relocation
         if self.tick_count > 0 and self.tick_count % DEPOSIT_RELOCATE_INTERVAL == 0:
             relocate_deposits()
+
+        # 7b. Archipelago migration
+        if (ARCHIPELAGO_ENABLED and self.tick_count > 0
+                and self.tick_count % MIGRATION_INTERVAL == 0):
+            from world.archipelago import migrate_cells
+            migrate_cells()
 
         # 8. Periodic genome garbage collection
         if self.tick_count > 0 and self.tick_count % GENOME_GC_INTERVAL == 0:
