@@ -42,37 +42,38 @@ NC = NUM_INTERNAL_CHEMICALS
 MR = MAX_REACTIONS
 PPR = CRN_PARAMS_PER_REACTION
 
-# Sensory-to-chemical mapping: which sensory inputs map to which internal chemicals.
-# We map the first NC sensory channels to internal chemicals.
-# Sensory inputs beyond NC are ignored by CRN (bond signals etc provide
-# supplementary information that reactions can access indirectly).
+# Sensory-to-chemical mapping: designed so that direct sensory-motor loops
+# are beneficial (eat, divide, move) and destructive actions (attack) require
+# evolved reaction chains or aging.
 #
-# Chemical 0 ← light_here [sensory 0]
-# Chemical 1 ← energy_level [sensory 1]
-# Chemical 2 ← S_gradient_x [sensory 5]
-# Chemical 3 ← S_gradient_y [sensory 6]
-# Chemical 4 ← R_gradient_x [sensory 7]
-# Chemical 5 ← cell_ahead [sensory 11]
-# Chemical 6 ← bond_count [sensory 14]
-# Chemical 7 ← prey_energy [sensory 16]
+# Chemical 0 ← light_here [sensory 0]        → eat (light=photosynthesis)
+# Chemical 1 ← energy_level [sensory 1]      → divide (energy→ready to divide)
+# Chemical 2 ← structure [sensory 2]         → move_forward (fed cells move)
+# Chemical 3 ← S_gradient_x [sensory 5]      → turn_left (gradients steer)
+# Chemical 4 ← S_gradient_y [sensory 6]      → turn_right (gradients steer)
+# Chemical 5 ← cell_ahead [sensory 11]       → bond (cell ahead→try to bond)
+# Chemical 6 ← bond_count [sensory 14]       → emit_signal (bonded→signal)
+# Chemical 7 ← age [sensory 15]              → attack (age-gated, must evolve)
 _SENSORY_MAP = ti.field(dtype=ti.i32, shape=(NC,))
 
-# Action-to-chemical mapping: which internal chemicals trigger which actions.
-# Chemical 0 → eat [action 3]
-# Chemical 1 → move_forward [action 0]
-# Chemical 2 → turn_left [action 1]
-# Chemical 3 → turn_right [action 2]
-# Chemical 4 → divide [action 5]
-# Chemical 5 → attack [action 8]
-# Chemical 6 → bond [action 6]
-# Chemical 7 → emit_signal [action 4]
+# Action-to-chemical mapping: matched to sensory mapping for direct loops.
+# Chemical 0 → eat [action 3]           (light → eat)
+# Chemical 1 → divide [action 5]        (energy → divide)
+# Chemical 2 → move_forward [action 0]  (S gradient → move)
+# Chemical 3 → turn_left [action 1]
+# Chemical 4 → turn_right [action 2]
+# Chemical 5 → bond [action 6]          (cell_ahead → bond, harmless)
+# Chemical 6 → emit_signal [action 4]
+# Chemical 7 → attack [action 8]        (age-gated: only fires when old enough)
 _ACTION_MAP = ti.field(dtype=ti.i32, shape=(NC,))
 
 
 def _init_maps():
     """Initialize sensory and action mapping tables."""
-    sensory_map = np.array([0, 1, 5, 6, 7, 11, 14, 16], dtype=np.int32)
-    action_map = np.array([3, 0, 1, 2, 5, 8, 6, 4], dtype=np.int32)
+    #                       light, energy, structure, S_gx, S_gy, cell_ahead, bonds, age
+    sensory_map = np.array([0,     1,      2,         5,    6,    11,         14,    15], dtype=np.int32)
+    #                       eat, divide, move, turn_l, turn_r, bond, signal, attack
+    action_map = np.array([3,    5,      0,    1,      2,      6,     4,     8], dtype=np.int32)
     _SENSORY_MAP.from_numpy(sensory_map)
     _ACTION_MAP.from_numpy(action_map)
 
@@ -87,10 +88,10 @@ def evaluate_all_crns():
             # 1. Set sensory chemicals from environment
             for s in range(NC):
                 sens_idx = _SENSORY_MAP[s]
-                # Blend: sensory input contributes but doesn't fully overwrite
-                # This preserves some memory while allowing environment influence
-                crn_chemicals[i, s] = (crn_chemicals[i, s] * 0.5 +
-                                       sensory_inputs[i, sens_idx] * 0.5)
+                # Blend: sensory input dominates (0.7) while preserving some
+                # memory (0.3) for temporal dynamics
+                crn_chemicals[i, s] = (crn_chemicals[i, s] * 0.3 +
+                                       sensory_inputs[i, sens_idx] * 0.7)
 
             # 2. Evaluate reactions
             for r in range(MR):
@@ -285,6 +286,7 @@ def init_crn_genome_table(count: int = INITIAL_CELL_COUNT, seed: int = RANDOM_SE
     genome_parent_id.from_numpy(np.full(MAX_GENOMES, -1, dtype=np.int32))
     genome_birth_tick.fill(0)
 
-    # Initialize internal chemicals to zero
-    crn_chemicals.from_numpy(np.zeros((MAX_CELLS, NUM_INTERNAL_CHEMICALS),
-                                       dtype=np.float32))
+    # Initialize internal chemicals near threshold for faster bootstrap
+    init_chems = np.full((MAX_CELLS, NUM_INTERNAL_CHEMICALS), 0.2,
+                         dtype=np.float32)
+    crn_chemicals.from_numpy(init_chems)

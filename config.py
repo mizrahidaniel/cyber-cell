@@ -167,7 +167,7 @@ CRN_MUTATION_SIGMA = 0.1
 CRN_MUTATION_RATE_DUPLICATE = 0.005
 CRN_MUTATION_RATE_DELETE = 0.005
 CRN_MUTATION_RATE_REWIRE = 0.01
-CRN_ACTION_THRESHOLD = 0.5
+CRN_ACTION_THRESHOLD = 0.25
 
 # =============================================================================
 # Visualization
