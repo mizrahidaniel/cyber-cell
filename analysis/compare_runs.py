@@ -110,14 +110,23 @@ def _plot_crn_comparison(path_a: str | None, path_b: str, output_dir: str):
     plt.close()
 
 
-def plot_comparison(neural_dir: str, crn_dir: str, output_dir: str):
+def detect_genome_type(run_dir: str) -> str:
+    """Detect genome type from run directory contents."""
+    crn_path = os.path.join(run_dir, "crn_metrics.jsonl")
+    return "CRN" if os.path.exists(crn_path) else "Neural"
+
+
+def plot_comparison(dir_a: str, dir_b: str, output_dir: str):
     """Generate comprehensive comparison plots."""
     os.makedirs(output_dir, exist_ok=True)
 
-    n_metrics = load_metrics(neural_dir)
-    c_metrics = load_metrics(crn_dir)
-    n_oee = load_oee(neural_dir)
-    c_oee = load_oee(crn_dir)
+    label_a = detect_genome_type(dir_a)
+    label_b = detect_genome_type(dir_b)
+
+    n_metrics = load_metrics(dir_a)
+    c_metrics = load_metrics(dir_b)
+    n_oee = load_oee(dir_a)
+    c_oee = load_oee(dir_b)
 
     if not n_metrics and not c_metrics:
         print("No metrics found in either directory!")
@@ -125,82 +134,30 @@ def plot_comparison(neural_dir: str, crn_dir: str, output_dir: str):
 
     # ── Figure 1: Population & Energy ──
     fig, axes = plt.subplots(2, 3, figsize=(18, 10))
-    fig.suptitle("Neural vs CRN: Population & Energy Dynamics", fontsize=14,
-                 fontweight="bold")
+    fig.suptitle(f"{label_a} vs {label_b}: Population & Energy Dynamics",
+                 fontsize=14, fontweight="bold")
 
-    # Population
-    ax = axes[0, 0]
-    if n_metrics:
-        t, v = extract_series(n_metrics, "population")
-        ax.plot(t, v, "b-", linewidth=0.8, alpha=0.8, label="Neural")
-    if c_metrics:
-        t, v = extract_series(c_metrics, "population")
-        ax.plot(t, v, "r-", linewidth=0.8, alpha=0.8, label="CRN")
-    ax.set_title("Population")
-    ax.set_xlabel("Tick")
-    ax.legend(fontsize=8)
-    ax.grid(True, alpha=0.3)
+    series_pairs = [
+        ("population", "Population"),
+        ("avg_energy", "Average Energy"),
+        ("num_genomes", "Unique Genomes"),
+        ("move_fraction", "Movement Fraction (chemotaxis indicator)"),
+        ("bond_fraction", "Bond Fraction"),
+        ("attack_fraction", "Attack Fraction (predation)"),
+    ]
 
-    # Average energy
-    ax = axes[0, 1]
-    if n_metrics:
-        t, v = extract_series(n_metrics, "avg_energy")
-        ax.plot(t, v, "b-", linewidth=0.8, alpha=0.8, label="Neural")
-    if c_metrics:
-        t, v = extract_series(c_metrics, "avg_energy")
-        ax.plot(t, v, "r-", linewidth=0.8, alpha=0.8, label="CRN")
-    ax.set_title("Average Energy")
-    ax.set_xlabel("Tick")
-    ax.legend(fontsize=8)
-    ax.grid(True, alpha=0.3)
-
-    # Genome diversity
-    ax = axes[0, 2]
-    if n_metrics:
-        t, v = extract_series(n_metrics, "num_genomes")
-        ax.plot(t, v, "b-", linewidth=0.8, alpha=0.8, label="Neural")
-    if c_metrics:
-        t, v = extract_series(c_metrics, "num_genomes")
-        ax.plot(t, v, "r-", linewidth=0.8, alpha=0.8, label="CRN")
-    ax.set_title("Unique Genomes")
-    ax.set_xlabel("Tick")
-    ax.legend(fontsize=8)
-    ax.grid(True, alpha=0.3)
-
-    # Movement fraction
-    ax = axes[1, 0]
-    if n_metrics:
-        t, v = extract_series(n_metrics, "move_fraction")
-        ax.plot(t, v, "b-", linewidth=0.8, alpha=0.8, label="Neural")
-    if c_metrics:
-        t, v = extract_series(c_metrics, "move_fraction")
-        ax.plot(t, v, "r-", linewidth=0.8, alpha=0.8, label="CRN")
-    ax.set_title("Movement Fraction (chemotaxis indicator)")
-    ax.set_xlabel("Tick")
-    ax.legend(fontsize=8)
-    ax.grid(True, alpha=0.3)
-
-    # Bond fraction
-    ax = axes[1, 1]
-    if n_metrics:
-        t, v = extract_series(n_metrics, "bond_fraction")
-        ax.plot(t, v, "b-", linewidth=0.8, alpha=0.8, label="Neural")
-    if c_metrics:
-        t, v = extract_series(c_metrics, "bond_fraction")
-        ax.plot(t, v, "r-", linewidth=0.8, alpha=0.8, label="CRN")
-    ax.set_title("Bond Fraction")
-    ax.set_xlabel("Tick")
-    ax.legend(fontsize=8)
-    ax.grid(True, alpha=0.3)
-
-    # Attack fraction
-    ax = axes[1, 2]
-    if n_metrics:
-        t, v = extract_series(n_metrics, "attack_fraction")
-        ax.plot(t, v, "b-", linewidth=0.8, alpha=0.8, label="Neural")
-    if c_metrics:
-        t, v = extract_series(c_metrics, "attack_fraction")
-        ax.plot(t, v, "r-", linewidth=0.8, alpha=0.8, label="CRN")
+    for idx, (key, title) in enumerate(series_pairs):
+        ax = axes[idx // 3, idx % 3]
+        if n_metrics:
+            t, v = extract_series(n_metrics, key)
+            ax.plot(t, v, "b-", linewidth=0.8, alpha=0.8, label=label_a)
+        if c_metrics:
+            t, v = extract_series(c_metrics, key)
+            ax.plot(t, v, "r-", linewidth=0.8, alpha=0.8, label=label_b)
+        ax.set_title(title)
+        ax.set_xlabel("Tick")
+        ax.legend(fontsize=8)
+        ax.grid(True, alpha=0.3)
     ax.set_title("Attack Fraction (predation)")
     ax.set_xlabel("Tick")
     ax.legend(fontsize=8)
@@ -213,7 +170,7 @@ def plot_comparison(neural_dir: str, crn_dir: str, output_dir: str):
     # ── Figure 2: OEE Metrics ──
     if n_oee or c_oee:
         fig, axes = plt.subplots(2, 3, figsize=(18, 10))
-        fig.suptitle("Neural vs CRN: Open-Ended Evolution Metrics",
+        fig.suptitle(f"{label_a} vs {label_b}: Open-Ended Evolution Metrics",
                      fontsize=14, fontweight="bold")
 
         oee_keys = [
@@ -230,11 +187,11 @@ def plot_comparison(neural_dir: str, crn_dir: str, output_dir: str):
             if n_oee:
                 t, v = extract_series(n_oee, key)
                 if len(t) > 0:
-                    ax.plot(t, v, "b-", linewidth=0.8, alpha=0.8, label="Neural")
+                    ax.plot(t, v, "b-", linewidth=0.8, alpha=0.8, label=label_a)
             if c_oee:
                 t, v = extract_series(c_oee, key)
                 if len(t) > 0:
-                    ax.plot(t, v, "r-", linewidth=0.8, alpha=0.8, label="CRN")
+                    ax.plot(t, v, "r-", linewidth=0.8, alpha=0.8, label=label_b)
             ax.set_title(title)
             ax.set_xlabel("Tick")
             ax.legend(fontsize=8)
@@ -245,19 +202,20 @@ def plot_comparison(neural_dir: str, crn_dir: str, output_dir: str):
         plt.close()
 
     # ── Figure 3: CRN comparison (if both have CRN metrics) ──
-    n_crn_path = os.path.join(neural_dir, "crn_metrics.jsonl")
-    c_crn_path = os.path.join(crn_dir, "crn_metrics.jsonl")
-    if os.path.exists(n_crn_path) and os.path.exists(c_crn_path):
-        _plot_crn_comparison(n_crn_path, c_crn_path, output_dir)
-    elif os.path.exists(c_crn_path):
-        # Only one CRN run — still useful to show
-        _plot_crn_comparison(None, c_crn_path, output_dir)
+    a_crn_path = os.path.join(dir_a, "crn_metrics.jsonl")
+    b_crn_path = os.path.join(dir_b, "crn_metrics.jsonl")
+    if os.path.exists(a_crn_path) and os.path.exists(b_crn_path):
+        _plot_crn_comparison(a_crn_path, b_crn_path, output_dir)
+    elif os.path.exists(b_crn_path):
+        _plot_crn_comparison(None, b_crn_path, output_dir)
+    elif os.path.exists(a_crn_path):
+        _plot_crn_comparison(None, a_crn_path, output_dir)
 
     # ── Summary report ──
-    report_lines = ["# Neural vs CRN Comparison Report\n"]
+    report_lines = [f"# {label_a} vs {label_b} Comparison Report\n"]
 
-    for label, metrics, oee in [("Neural", n_metrics, n_oee),
-                                 ("CRN", c_metrics, c_oee)]:
+    for label, metrics, oee in [(label_a, n_metrics, n_oee),
+                                 (label_b, c_metrics, c_oee)]:
         if not metrics:
             continue
         report_lines.append(f"\n## {label} Genome\n")

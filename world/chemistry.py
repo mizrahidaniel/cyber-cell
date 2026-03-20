@@ -13,6 +13,7 @@ from config import (
     LIGHT_ZONE_END, DIM_ZONE_END,
     RANDOM_SEED, R_LIGHT_ZONE_FRACTION,
     DEPOSIT_RELOCATE_FRACTION,
+    WASTE_ENABLED, WASTE_DIFFUSION_RATE, WASTE_DECAY_RATE,
 )
 
 # Double-buffered chemical fields (environment only — E is internal)
@@ -22,6 +23,10 @@ env_R_a = ti.field(dtype=ti.f32, shape=(GRID_WIDTH, GRID_HEIGHT))
 env_R_b = ti.field(dtype=ti.f32, shape=(GRID_WIDTH, GRID_HEIGHT))
 env_G_a = ti.field(dtype=ti.f32, shape=(GRID_WIDTH, GRID_HEIGHT))
 env_G_b = ti.field(dtype=ti.f32, shape=(GRID_WIDTH, GRID_HEIGHT))
+
+# Metabolic waste field (only produced by cells, no deposits)
+env_W_a = ti.field(dtype=ti.f32, shape=(GRID_WIDTH, GRID_HEIGHT))
+env_W_b = ti.field(dtype=ti.f32, shape=(GRID_WIDTH, GRID_HEIGHT))
 
 # Deposit source positions
 deposit_S_x = ti.field(dtype=ti.i32, shape=(NUM_DEPOSITS_S,))
@@ -56,6 +61,15 @@ def _get_dst_R():
 
 def _get_dst_G():
     return env_G_b if _current_buffer == 0 else env_G_a
+
+
+def get_env_W():
+    """Return the current read buffer for W (metabolic waste)."""
+    return env_W_a if _current_buffer == 0 else env_W_b
+
+
+def _get_dst_W():
+    return env_W_b if _current_buffer == 0 else env_W_a
 
 
 @ti.kernel
@@ -109,10 +123,14 @@ def diffuse_all():
         _diffuse_and_decay(env_S_a, env_S_b, DIFFUSION_RATE_S, DECAY_RATE_S)
         _diffuse_and_decay(env_R_a, env_R_b, DIFFUSION_RATE_R, DECAY_RATE_R)
         _diffuse_and_decay(env_G_a, env_G_b, DIFFUSION_RATE_G, DECAY_RATE_G)
+        if WASTE_ENABLED:
+            _diffuse_and_decay(env_W_a, env_W_b, WASTE_DIFFUSION_RATE, WASTE_DECAY_RATE)
     else:
         _diffuse_and_decay(env_S_b, env_S_a, DIFFUSION_RATE_S, DECAY_RATE_S)
         _diffuse_and_decay(env_R_b, env_R_a, DIFFUSION_RATE_R, DECAY_RATE_R)
         _diffuse_and_decay(env_G_b, env_G_a, DIFFUSION_RATE_G, DECAY_RATE_G)
+        if WASTE_ENABLED:
+            _diffuse_and_decay(env_W_b, env_W_a, WASTE_DIFFUSION_RATE, WASTE_DECAY_RATE)
 
 
 def replenish_deposits():

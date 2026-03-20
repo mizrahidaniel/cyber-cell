@@ -47,6 +47,16 @@ LIGHT_ATTENUATION_K = 0.03      # extinction coefficient per neighbor (74% at de
 LIGHT_ATTENUATION_RADIUS = 2    # neighborhood radius for density count
 
 # =============================================================================
+# Metabolic Waste (photosynthesis byproduct, local toxicity)
+# =============================================================================
+WASTE_ENABLED = True
+WASTE_PRODUCTION_RATE = 0.01     # waste per unit energy gained from photosynthesis
+WASTE_DECAY_RATE = 0.002         # per-tick decay (half-life ~350 ticks)
+WASTE_DIFFUSION_RATE = 0.05      # 5% spreads per tick (same as signal)
+WASTE_TOXICITY_THRESHOLD = 0.5   # waste above this causes membrane damage
+WASTE_TOXICITY_RATE = 0.05       # membrane damage per tick per unit waste above threshold
+
+# =============================================================================
 # Archipelago (soft-wall quadrant partitioning)
 # =============================================================================
 ARCHIPELAGO_ENABLED = True

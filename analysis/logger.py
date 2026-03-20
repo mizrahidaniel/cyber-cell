@@ -8,8 +8,8 @@ import numpy as np
 
 from analysis.metrics import (
     get_population_stats, get_genome_diversity, get_movement_stats,
-    get_predation_stats, get_light_attenuation_stats,
-    get_spatial_snapshot, get_genome_weight_snapshot,
+    get_predation_stats, get_light_attenuation_stats, get_zone_stats,
+    get_waste_stats, get_spatial_snapshot, get_genome_weight_snapshot,
     get_burst_spatial_snapshot, get_crn_snapshot,
 )
 from config import (
@@ -72,6 +72,8 @@ class SimulationLogger:
         pred_stats = get_predation_stats()
 
         light_stats = get_light_attenuation_stats()
+        zone_stats = get_zone_stats()
+        waste_stats = get_waste_stats()
 
         record = {
             "tick": tick,
@@ -80,6 +82,8 @@ class SimulationLogger:
             **move_stats,
             **pred_stats,
             **light_stats,
+            **zone_stats,
+            **waste_stats,
         }
 
         self._file.write(json.dumps(record) + "\n")

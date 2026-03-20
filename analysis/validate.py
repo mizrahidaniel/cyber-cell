@@ -60,6 +60,9 @@ def run_validation(ticks: int, genome_type: str = "neural",
     # Light attenuation accumulators
     effective_light_samples = []
     local_density_samples = []
+    # Waste accumulators
+    waste_at_cells_samples = []
+    max_waste_samples = []
     # CRN-specific accumulators
     hidden_zone_samples = []
 
@@ -138,6 +141,16 @@ def run_validation(ticks: int, genome_type: str = "neural",
                     cell_dens = density_np[alive_xs, alive_ys]
                     effective_light_samples.append(float(cell_lights.mean()))
                     local_density_samples.append(float(cell_dens.mean()))
+
+                # Waste stats
+                if config.WASTE_ENABLED:
+                    from world.chemistry import get_env_W
+                    waste_np = get_env_W().to_numpy()
+                    alive_xs = cell_x.to_numpy()[alive_mask]
+                    alive_ys = cell_y.to_numpy()[alive_mask]
+                    cell_waste = waste_np[alive_xs, alive_ys]
+                    waste_at_cells_samples.append(float(cell_waste.mean()))
+                    max_waste_samples.append(float(waste_np.max()))
 
                 # CRN-specific: hidden zone activation
                 if genome_type == "crn":
@@ -265,6 +278,8 @@ def run_validation(ticks: int, genome_type: str = "neural",
         "cluster_sizes": cluster_sizes,
         "effective_light_samples": effective_light_samples,
         "local_density_samples": local_density_samples,
+        "waste_at_cells_samples": waste_at_cells_samples,
+        "max_waste_samples": max_waste_samples,
         "hidden_zone_samples": hidden_zone_samples,
         "crn_dominant_active_reactions": crn_dominant_active_reactions,
     }
@@ -417,7 +432,23 @@ def check_results(results: dict) -> list[tuple[str, bool, str]]:
         detail = "attenuation not enabled or no samples"
     checks.append(("Light attenuation working", passed, detail))
 
-    # 12-18. CRN-specific checks
+    # 12. Waste system checks
+    waste_samples = results.get("waste_at_cells_samples", [])
+    max_waste = results.get("max_waste_samples", [])
+    import config as _cfg2
+    if getattr(_cfg2, 'WASTE_ENABLED', False) and waste_samples:
+        avg_waste = np.mean(waste_samples[-10:]) if len(waste_samples) >= 10 else np.mean(waste_samples)
+        passed = avg_waste > 0.0
+        detail = f"avg waste at cells={avg_waste:.4f} (target >0)"
+        checks.append(("Waste system active", passed, detail))
+
+        if max_waste:
+            peak = max(max_waste)
+            passed = peak < 50.0
+            detail = f"peak waste={peak:.2f} (target <50)"
+            checks.append(("Waste not runaway", passed, detail))
+
+    # CRN-specific checks
     if results["genome_type"] == "crn":
         # CRN population target (lower with light attenuation enabled)
         import config as _cfg

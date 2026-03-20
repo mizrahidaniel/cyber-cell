@@ -11,17 +11,20 @@ from config import (
     GENOME_GC_INTERVAL, RANDOM_SEED, SNAPSHOT_INTERVAL,
     DEPOSIT_RELOCATE_INTERVAL, ARCHIPELAGO_ENABLED, MIGRATION_INTERVAL,
     GENOME_TYPE, MIN_POPULATION, RESPAWN_INTERVAL,
-    LIGHT_ATTENUATION_ENABLED,
+    LIGHT_ATTENUATION_ENABLED, WASTE_ENABLED,
 )
 
 from world.grid import compute_light, init_grid, compute_local_density, apply_light_attenuation
 from world.chemistry import (
     diffuse_all, replenish_deposits, swap_buffers, init_chemistry,
-    get_env_S, get_env_R, get_env_G,
+    get_env_S, get_env_R, get_env_G, _get_dst_W,
     get_current_buffer, set_current_buffer, relocate_deposits,
 )
 from cell.cell_state import init_cell_state, cell_count
-from cell.lifecycle import photosynthesis, eat_passive, apply_metabolism, check_death
+from cell.lifecycle import (
+    photosynthesis, eat_passive, apply_metabolism, check_death,
+    apply_waste_toxicity,
+)
 from cell.genome import (
     init_genome_table, evaluate_all_networks, process_mutations,
     garbage_collect_genomes, genome_count, get_mutation_events,
@@ -187,10 +190,13 @@ class SimulationEngine:
         env_S = get_env_S()
         env_R = get_env_R()
         env_G = get_env_G()
+        env_W = _get_dst_W()  # write buffer for waste production
 
         # 2. Passive processes (always on, not gated by neural net)
-        photosynthesis(env_S, env_R)
+        photosynthesis(env_S, env_R, env_W)
         eat_passive(env_S, env_R)
+        if WASTE_ENABLED:
+            apply_waste_toxicity(env_W)
 
         # 3. Sense -> Think -> Act
         compute_sensory_inputs(env_S, env_R, env_G)

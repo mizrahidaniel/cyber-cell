@@ -3,7 +3,7 @@
 import numpy as np
 import taichi as ti
 
-from config import MAX_CELLS, MAX_GENOMES, ACTION_THRESHOLD
+from config import MAX_CELLS, MAX_GENOMES, ACTION_THRESHOLD, LIGHT_ZONE_END, DIM_ZONE_END
 from cell.cell_state import (
     cell_alive, cell_energy, cell_age, cell_repmat, cell_x, cell_y,
     cell_membrane, cell_bonds, cell_genome_id, cell_facing,
@@ -217,6 +217,60 @@ def get_light_attenuation_stats() -> dict:
         "avg_local_density": float(cell_densities.mean()),
         "max_local_density": int(cell_densities.max()),
         "density_gt5_frac": float((cell_densities > 5).mean()),
+    }
+
+
+def get_zone_stats() -> dict:
+    """Compute population breakdown by light zone."""
+    alive = cell_alive.to_numpy() == 1
+    count = int(alive.sum())
+
+    if count == 0:
+        return {
+            "bright_count": 0, "dim_count": 0, "dark_count": 0,
+            "bright_pct": 0.0, "dim_pct": 0.0, "dark_pct": 0.0,
+        }
+
+    xs = cell_x.to_numpy()[alive]
+    bright = int((xs < LIGHT_ZONE_END).sum())
+    dim = int(((xs >= LIGHT_ZONE_END) & (xs < DIM_ZONE_END)).sum())
+    dark = count - bright - dim
+
+    return {
+        "bright_count": bright, "dim_count": dim, "dark_count": dark,
+        "bright_pct": float(bright / count),
+        "dim_pct": float(dim / count),
+        "dark_pct": float(dark / count),
+    }
+
+
+def get_waste_stats() -> dict:
+    """Compute metabolic waste statistics at occupied cell positions."""
+    from config import WASTE_ENABLED, WASTE_TOXICITY_THRESHOLD
+    if not WASTE_ENABLED:
+        return {}
+
+    from world.chemistry import get_env_W
+
+    alive = cell_alive.to_numpy() == 1
+    count = int(alive.sum())
+
+    if count == 0:
+        return {
+            "avg_waste_at_cells": 0.0,
+            "max_waste": 0.0,
+            "waste_gt_threshold_frac": 0.0,
+        }
+
+    xs = cell_x.to_numpy()[alive]
+    ys = cell_y.to_numpy()[alive]
+    waste_np = get_env_W().to_numpy()
+    cell_waste = waste_np[xs, ys]
+
+    return {
+        "avg_waste_at_cells": float(cell_waste.mean()),
+        "max_waste": float(waste_np.max()),
+        "waste_gt_threshold_frac": float((cell_waste > WASTE_TOXICITY_THRESHOLD).mean()),
     }
 
 

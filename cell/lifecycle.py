@@ -8,6 +8,8 @@ from config import (
     ENERGY_ZERO_MEMBRANE_DAMAGE, AGE_MEMBRANE_DECAY, MAX_CELL_AGE,
     EAT_ABSORB_CAP, EAT_COST, S_ENERGY_VALUE, R_ENERGY_VALUE,
     PASSIVE_EAT_CAP, KILL_ABSORPTION_RATE, KILL_ENERGY_BONUS,
+    WASTE_ENABLED, WASTE_PRODUCTION_RATE, WASTE_TOXICITY_THRESHOLD,
+    WASTE_TOXICITY_RATE,
 )
 from config import BOND_SIGNAL_CHANNELS
 from cell.cell_state import (
@@ -24,12 +26,17 @@ deaths_by_starvation = ti.field(dtype=ti.i32, shape=())
 
 
 @ti.kernel
-def photosynthesis(env_S: ti.template(), env_R: ti.template()):
+def photosynthesis(env_S: ti.template(), env_R: ti.template(),
+                   env_W: ti.template()):
     """Passive energy gain from light. Always active — not gated by neural net."""
     for i in range(MAX_CELLS):
         if cell_alive[i] == 1:
             light = light_field[cell_x[i], cell_y[i]]
-            cell_energy[i] += light * PHOTOSYNTHESIS_RATE
+            gain = light * PHOTOSYNTHESIS_RATE
+            cell_energy[i] += gain
+            if WASTE_ENABLED and gain > 0.0:
+                ti.atomic_add(env_W[cell_x[i], cell_y[i]],
+                              gain * WASTE_PRODUCTION_RATE)
 
 
 @ti.kernel
@@ -62,6 +69,17 @@ def eat_passive(env_S: ti.template(), env_R: ti.template()):
                 env_R[x, y] -= take_r
                 cell_repmat[i] += take_r
                 cell_energy[i] += take_r * R_ENERGY_VALUE
+
+
+@ti.kernel
+def apply_waste_toxicity(env_W: ti.template()):
+    """Cells in high-waste areas take membrane damage."""
+    for i in range(MAX_CELLS):
+        if cell_alive[i] == 1:
+            waste = env_W[cell_x[i], cell_y[i]]
+            if waste > WASTE_TOXICITY_THRESHOLD:
+                damage = (waste - WASTE_TOXICITY_THRESHOLD) * WASTE_TOXICITY_RATE
+                cell_membrane[i] -= damage
 
 
 @ti.kernel
