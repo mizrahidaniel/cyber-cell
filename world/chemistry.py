@@ -12,6 +12,7 @@ from config import (
     DEPOSIT_CLUSTER_RADIUS, DEPOSIT_CLUSTER_AMOUNT,
     LIGHT_ZONE_END, DIM_ZONE_END,
     RANDOM_SEED, R_LIGHT_ZONE_FRACTION,
+    DEPOSIT_RELOCATE_FRACTION,
 )
 
 # Double-buffered chemical fields (environment only — E is internal)
@@ -214,3 +215,42 @@ def init_chemistry(seed: int = RANDOM_SEED):
     env_S_b.from_numpy(s_field)
     env_R_a.from_numpy(r_field)
     env_R_b.from_numpy(r_field)
+
+
+# RNG for deposit relocation (separate from init RNG)
+_relocate_rng = np.random.default_rng(RANDOM_SEED + 500)
+
+
+def relocate_deposits():
+    """Move a fraction of deposits to new random positions.
+
+    This creates dynamic patchy resources that shift over time,
+    forcing cells to navigate rather than sit on static food sources.
+    """
+    frac = DEPOSIT_RELOCATE_FRACTION
+
+    # Relocate S deposits
+    n_move_s = max(1, int(NUM_DEPOSITS_S * frac))
+    s_x = deposit_S_x.to_numpy()
+    s_y = deposit_S_y.to_numpy()
+    indices_s = _relocate_rng.choice(NUM_DEPOSITS_S, size=n_move_s, replace=False)
+    for idx in indices_s:
+        s_x[idx] = _relocate_rng.integers(LIGHT_ZONE_END, GRID_WIDTH)
+        s_y[idx] = _relocate_rng.integers(0, GRID_HEIGHT)
+    deposit_S_x.from_numpy(s_x)
+    deposit_S_y.from_numpy(s_y)
+
+    # Relocate R deposits (maintain light zone fraction)
+    n_move_r = max(1, int(NUM_DEPOSITS_R * frac))
+    r_x = deposit_R_x.to_numpy()
+    r_y = deposit_R_y.to_numpy()
+    indices_r = _relocate_rng.choice(NUM_DEPOSITS_R, size=n_move_r, replace=False)
+    n_r_light = int(NUM_DEPOSITS_R * R_LIGHT_ZONE_FRACTION)
+    for idx in indices_r:
+        if idx < n_r_light and LIGHT_ZONE_END > 0:
+            r_x[idx] = _relocate_rng.integers(0, LIGHT_ZONE_END)
+        else:
+            r_x[idx] = _relocate_rng.integers(LIGHT_ZONE_END, GRID_WIDTH)
+        r_y[idx] = _relocate_rng.integers(0, GRID_HEIGHT)
+    deposit_R_x.from_numpy(r_x)
+    deposit_R_y.from_numpy(r_y)

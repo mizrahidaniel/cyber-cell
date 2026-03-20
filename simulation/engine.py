@@ -7,13 +7,13 @@ import sys
 
 import numpy as np
 
-from config import GENOME_GC_INTERVAL, RANDOM_SEED, SNAPSHOT_INTERVAL
+from config import GENOME_GC_INTERVAL, RANDOM_SEED, SNAPSHOT_INTERVAL, DEPOSIT_RELOCATE_INTERVAL
 
 from world.grid import compute_light, init_grid
 from world.chemistry import (
     diffuse_all, replenish_deposits, swap_buffers, init_chemistry,
     get_env_S, get_env_R, get_env_G,
-    get_current_buffer, set_current_buffer,
+    get_current_buffer, set_current_buffer, relocate_deposits,
 )
 from cell.cell_state import init_cell_state, cell_count
 from cell.lifecycle import photosynthesis, eat_passive, apply_metabolism, check_death
@@ -206,19 +206,23 @@ class SimulationEngine:
         # 6. Swap diffusion buffers
         swap_buffers()
 
-        # 7. Periodic genome garbage collection
+        # 7. Periodic deposit relocation
+        if self.tick_count > 0 and self.tick_count % DEPOSIT_RELOCATE_INTERVAL == 0:
+            relocate_deposits()
+
+        # 8. Periodic genome garbage collection
         if self.tick_count > 0 and self.tick_count % GENOME_GC_INTERVAL == 0:
             garbage_collect_genomes()
 
-        # 8. Periodic logging
+        # 9. Periodic logging
         if self.logger and self.tick_count % SNAPSHOT_INTERVAL == 0:
             self.logger.snapshot(self.tick_count)
 
-        # 8b. Burst snapshots (checked every tick, lightweight)
+        # 9b. Burst snapshots (checked every tick, lightweight)
         if self.logger:
             self.logger.check_burst_snapshot(self.tick_count)
 
-        # 9. Check for backend auto-switch
+        # 10. Check for backend auto-switch
         if (self.auto_switch and self.tick_count > 0
                 and self.tick_count % _SWITCH_CHECK_INTERVAL == 0):
             desired = self._desired_backend()

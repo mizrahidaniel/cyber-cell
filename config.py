@@ -34,8 +34,15 @@ DECAY_RATE_G = 0.05
 DEPOSIT_REPLENISH_RATE = 0.012
 NUM_DEPOSITS_S = 200
 NUM_DEPOSITS_R = 200
-DEPOSIT_CLUSTER_RADIUS = 15
-DEPOSIT_CLUSTER_AMOUNT = 5.0
+DEPOSIT_CLUSTER_RADIUS = 10       # tighter clusters for patchier distribution
+DEPOSIT_CLUSTER_AMOUNT = 10.0     # higher concentration per deposit
+DEPOSIT_RELOCATE_INTERVAL = 25000 # ticks between partial deposit relocation
+DEPOSIT_RELOCATE_FRACTION = 0.2   # fraction of deposits relocated each interval
+
+# =============================================================================
+# Sensing
+# =============================================================================
+GRADIENT_NOISE_SIGMA = 0.15       # Gaussian noise on gradient sensing
 
 # =============================================================================
 # Cells

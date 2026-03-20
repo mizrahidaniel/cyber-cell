@@ -9,6 +9,7 @@ import taichi as ti
 from config import (
     MAX_CELLS, GRID_WIDTH, GRID_HEIGHT, MAX_CELL_AGE, NUM_INPUTS,
     GRADIENT_SCALE_S, GRADIENT_SCALE_R, BOND_SIGNAL_CHANNELS,
+    GRADIENT_NOISE_SIGMA,
 )
 from cell.cell_state import (
     cell_alive, cell_x, cell_y, cell_energy, cell_structure, cell_repmat,
@@ -17,6 +18,14 @@ from cell.cell_state import (
 )
 from cell.genome import sensory_inputs
 from world.grid import light_field
+
+
+@ti.func
+def _box_muller_normal() -> ti.f32:
+    """Generate a standard normal random number on GPU using Box-Muller transform."""
+    u1 = ti.max(1e-7, ti.random(ti.f32))
+    u2 = ti.random(ti.f32)
+    return ti.sqrt(-2.0 * ti.log(u1)) * ti.cos(2.0 * 3.14159265358979 * u2)
 
 
 @ti.func
@@ -81,28 +90,36 @@ def compute_sensory_inputs(env_S: ti.template(), env_R: ti.template(),
             # [4] membrane integrity
             sensory_inputs[i, 4] = cell_membrane[i] / 100.0
 
-            # [5]-[6] S gradient (fixes spec bug: was labeled E_gradient)
+            # [5]-[6] S gradient with Gaussian noise
             xp = (x + 1) % GRID_WIDTH
             xm = (x - 1 + GRID_WIDTH) % GRID_WIDTH
             yp = (y + 1) % GRID_HEIGHT
             ym = (y - 1 + GRID_HEIGHT) % GRID_HEIGHT
 
+            noise_sigma = GRADIENT_NOISE_SIGMA
+
             sensory_inputs[i, 5] = ti.min(1.0, ti.max(-1.0,
-                (env_S[xp, y] - env_S[xm, y]) * GRADIENT_SCALE_S))
+                (env_S[xp, y] - env_S[xm, y]) * GRADIENT_SCALE_S
+                + _box_muller_normal() * noise_sigma))
             sensory_inputs[i, 6] = ti.min(1.0, ti.max(-1.0,
-                (env_S[x, yp] - env_S[x, ym]) * GRADIENT_SCALE_S))
+                (env_S[x, yp] - env_S[x, ym]) * GRADIENT_SCALE_S
+                + _box_muller_normal() * noise_sigma))
 
-            # [7]-[8] R gradient (amplified to make R deposits detectable)
+            # [7]-[8] R gradient with Gaussian noise
             sensory_inputs[i, 7] = ti.min(1.0, ti.max(-1.0,
-                (env_R[xp, y] - env_R[xm, y]) * GRADIENT_SCALE_R))
+                (env_R[xp, y] - env_R[xm, y]) * GRADIENT_SCALE_R
+                + _box_muller_normal() * noise_sigma))
             sensory_inputs[i, 8] = ti.min(1.0, ti.max(-1.0,
-                (env_R[x, yp] - env_R[x, ym]) * GRADIENT_SCALE_R))
+                (env_R[x, yp] - env_R[x, ym]) * GRADIENT_SCALE_R
+                + _box_muller_normal() * noise_sigma))
 
-            # [9]-[10] G (signal) gradient
+            # [9]-[10] G (signal) gradient with Gaussian noise
             sensory_inputs[i, 9] = ti.min(1.0, ti.max(-1.0,
-                (env_G[xp, y] - env_G[xm, y]) * 0.5))
+                (env_G[xp, y] - env_G[xm, y]) * 0.5
+                + _box_muller_normal() * noise_sigma))
             sensory_inputs[i, 10] = ti.min(1.0, ti.max(-1.0,
-                (env_G[x, yp] - env_G[x, ym]) * 0.5))
+                (env_G[x, yp] - env_G[x, ym]) * 0.5
+                + _box_muller_normal() * noise_sigma))
 
             # [11] cell ahead + [16]-[17] prey energy/membrane
             ahead = facing_offset(f)
