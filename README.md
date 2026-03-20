@@ -13,14 +13,17 @@ pip install -r requirements.txt
 python main.py
 
 # Run headless (for long evolution runs)
-python main.py --headless --ticks 100000 --log-interval 5000
+python main.py --headless --ticks 100000
+
+# Use CRN genome instead of neural network
+python main.py --genome crn --headless --ticks 50000
 
 # Force a specific backend
-python main.py --backend metal   # macOS (Apple Silicon GPU)
 python main.py --backend cuda    # Windows/NVIDIA
+python main.py --backend metal   # macOS (Apple Silicon GPU)
 python main.py --backend cpu     # Any platform
 
-# Re-benchmark backends (e.g. after hardware changes)
+# Re-benchmark backends
 python main.py --rebenchmark
 
 # Resume from a checkpoint
@@ -31,7 +34,7 @@ python main.py --resume path/to/checkpoint.npz
 
 | Key | Action |
 |-----|--------|
-| `1` | Cell view (default) — cells colored by genome, brightness = energy. Attackers tinted red, bonded cells brightened |
+| `1` | Cell view (default) — cells colored by genome, brightness = energy |
 | `2` | Structure (S) chemical heatmap (green) |
 | `3` | Replication (R) chemical heatmap (red) |
 | `4` | Signal (G) chemical heatmap (blue) |
@@ -45,7 +48,7 @@ python main.py --resume path/to/checkpoint.npz
 
 ### The World
 
-A 500x500 toroidal grid (edges wrap) divided into three zones:
+A 500×500 toroidal grid (edges wrap) divided into three light zones:
 
 ```
 |<--- Light Zone --->|<--- Dim Zone --->|<--- Dark Zone --->|
@@ -54,260 +57,205 @@ A 500x500 toroidal grid (edges wrap) divided into three zones:
 |   (no deposits)     |  S + R deposits  |   S + R deposits  |
 ```
 
-A **day/night cycle** (1000 ticks per cycle) modulates light with a sinusoidal curve. During "night" (~500 ticks), all light drops to zero. Cells must accumulate enough energy during the day to survive the night.
+A **day/night cycle** (1000 ticks) modulates light sinusoidally. During night, all light drops to zero — cells must survive on reserves.
+
+**Archipelago**: the grid is soft-partitioned into 4 quadrants with reduced chemical diffusion at boundaries. Each quadrant has ±30% parameter variance (light, photosynthesis rate). One cell migrates between random quadrants every 200 ticks, maintaining gene flow without homogenizing populations.
 
 ### Chemistry
 
-Four chemicals drive the simulation:
+Four chemicals drive the ecosystem:
 
-| Chemical | Role | In Environment? | Diffusion | Decay |
-|----------|------|-----------------|-----------|-------|
-| **E** (Energy) | Internal fuel. All actions cost E. Die at 0. | No (internal only) | — | 0.02/tick (flat) |
-| **S** (Structure) | Membrane repair material. | Yes | Slow (0.01) | 0.001/tick |
-| **R** (Replication) | Required for cell division (R >= 5). Scarce. | Yes | Slow (0.03) | 0.001/tick |
-| **G** (Signal) | Communication chemical. Only produced by cells. | Yes | Fast (0.3) | 0.05/tick |
+| Chemical | Role | Diffusion | Decay |
+|----------|------|-----------|-------|
+| **E** (Energy) | Internal fuel. All actions cost E. Die at 0. | — | 0.02/tick |
+| **S** (Structure) | Membrane repair material. | 0.01 | 0.001/tick |
+| **R** (Replication) | Required for division (R ≥ 5). Scarce. | 0.03 | 0.001/tick |
+| **G** (Signal) | Communication chemical. Produced by cells. | 0.3 | 0.05/tick |
 
-**Resource deposits** are fixed points on the grid that generate S or R each tick (0.015 units/tick). They create concentration gradients that diffuse outward and decay. Both S and R deposits are concentrated in the dim and dark zones (x >= 166), forcing cells to leave the light zone to find replication material. This spatial separation of energy (left) and materials (right) creates strong evolutionary pressure for chemotaxis.
+**Resource deposits** generate S or R each tick (0.012 units), creating gradients that diffuse outward. Deposits are concentrated in dim/dark zones, forcing cells to leave the light zone for replication material. 20% of deposits relocate every 25k ticks.
 
 ### The CyberCell
 
 Each cell occupies one grid position and has:
 
-- **Internal state**: energy, structure, replication material, signal store, membrane integrity (0-100), age
-- **A neural network brain**: 18 sensory inputs → 32 hidden (tanh) → 32 hidden (tanh) → 10 action outputs (sigmoid)
-- **A genome**: 1,994 floating-point weights that define the neural network
+- **Internal state**: energy, structure, replication material, signal, membrane (0-100), age
+- **A brain**: either a neural network (2,638 weights) or a chemical reaction network (120 parameters)
+- **Bonds**: up to 4 connections to adjacent cells with strength, decay, and 4 signal channels per direction
+- **34 sensory inputs** (18 base + 16 bond signals) and **14 action outputs** (10 base + 4 bond signals)
 
-#### Sensory Inputs (18)
+### Two Genome Types
 
-| # | Input | Description |
-|---|-------|-------------|
-| 0 | light_here | Light intensity at current position (0-1) |
-| 1 | energy_level | Own energy, normalized |
-| 2 | structure_level | Own structure, normalized |
-| 3 | repmat_level | Own replication material, normalized |
-| 4 | membrane_integrity | Own membrane health, normalized |
-| 5-6 | S_gradient_x/y | Direction of increasing S concentration |
-| 7-8 | R_gradient_x/y | Direction of increasing R concentration |
-| 9-10 | G_gradient_x/y | Direction of increasing signal concentration |
-| 11 | cell_ahead | Is there a cell in front of me? (0/1) |
-| 12 | cell_left | Cell to my left? (0/1) |
-| 13 | cell_right | Cell to my right? (0/1) |
-| 14 | bond_count | Number of active bonds (0-1, normalized) |
-| 15 | age_normalized | Age / max_age |
-| 16 | prey_energy | Energy of cell ahead (0-1, normalized) |
-| 17 | prey_membrane | Membrane of cell ahead (0-1, normalized) |
+**Neural Network** (`--genome neural`, default):
+Feedforward 34→32→32→14. Actions fire when sigmoid output > 0.5. Mutation: weight perturbation (3%), reset (0.1%), knockout (0.05%).
 
-#### Action Outputs (10)
+**Chemical Reaction Network** (`--genome crn`):
+16 internal chemicals in 3 zones (sensory/hidden/action), 16 reaction rules. Concentrations persist between ticks — the CRN has memory. Actions fire probabilistically via sigmoid: P(fire) = σ(30 × (chemical − 0.5)). Provides smooth evolutionary gradient unlike hard thresholds. See [CLAUDE.md](CLAUDE.md) Section 5 for architecture details.
 
-| # | Action | Energy Cost | Threshold | Description |
-|---|--------|-------------|-----------|-------------|
-| 0 | move_forward | 0.1 | 0.5 | Move one step in facing direction |
-| 1 | turn_left | 0.02 | 0.5 | Rotate counter-clockwise |
-| 2 | turn_right | 0.02 | 0.5 | Rotate clockwise |
-| 3 | eat | 0.02 | 0.5 | Absorb extra S/R from environment |
-| 4 | emit_signal | 0.1 | 0.5 | Release G chemical |
-| 5 | divide | 20.0 + 5R | 0.5 | Reproduce (requires E >= 20, R >= 5) |
-| 6 | bond | 0.05 | 0.5 | Bond with adjacent cell (mutual — both must fire) |
-| 7 | unbond | — | 0.5 | Break all bonds (unilateral) |
-| 8 | attack | 0.5 | 0.5 | Damage cell ahead (5 membrane damage) |
-| 9 | repair | 0.1 + 0.5S | 0.5 | Repair own membrane (+5 integrity) |
+### Actions (14 outputs)
 
-Actions fire when the sigmoid output exceeds 0.5. Multiple actions can fire per tick.
-
-Additionally, **photosynthesis** and **passive eating** (small chemical absorption) are always active — they are not gated by the neural network.
+| # | Action | Cost | Description |
+|---|--------|------|-------------|
+| 0 | move_forward | 0.1 E | Move one step in facing direction (unbonded only) |
+| 1-2 | turn_left/right | 0.02 E | Rotate facing |
+| 3 | eat | 0.02 E | Absorb S/R from environment |
+| 4 | emit_signal | 0.1 E | Release G chemical |
+| 5 | divide | 20 E + 5 R | Reproduce (auto-bonds parent↔daughter) |
+| 6 | bond | 0.01 E | Bond with adjacent cell (mutual) |
+| 7 | unbond | — | Break all bonds |
+| 8 | attack | 0.3 E | Damage cell ahead (8 membrane damage) |
+| 9 | repair | 0.1 E + 0.5 S | Repair membrane (+5 integrity) |
+| 10-13 | bond_signals | — | 4-channel signals to bonded partners |
 
 ### Energy Balance
 
 **Income:**
-- Photosynthesis: `light_intensity * 0.5` E/tick (passive, always on)
-- Eating chemicals: 0.3 E per S absorbed, 0.5 E per R absorbed
+- Photosynthesis: `light × 0.45` E/tick (passive, always on)
+- Eating: 0.3 E per S absorbed, 0.5 E per R absorbed
+- Predation: 12% of victim's chemicals on kill (no flat bonus)
 
-**Passive drains (every tick):**
-- Basal metabolism: 0.05
-- Internal energy decay: 0.02
-- Network evaluation: 0.01
-- Total passive: **0.08 E/tick**
+**Drains:**
+- Basal metabolism: 0.08 E/tick
+- Network evaluation: 0.01 E/tick
+- Bond maintenance: 0.01 E/tick per bond (automatic)
 
-A cell in the bright zone at peak daylight earns 0.5 E/tick, giving a net surplus of ~0.42 E/tick. Moving costs 0.1 E, making mobile strategies viable (~24% of surplus). During night, income drops to zero and cells must survive on reserves.
-
-**Death conditions:**
-- Membrane reaches 0 → instant death, internal chemicals spill into environment
-- Energy reaches 0 → takes 5 membrane damage/tick until energy is restored
-- Age exceeds 5000 → loses 1 membrane/tick (death within 100 ticks)
+**Death:** membrane reaches 0 (instant), energy at 0 (5 membrane damage/tick), age > 5000 (1 membrane/tick).
 
 ### Evolution
 
-**Reproduction:** When a cell's divide output fires and it has E >= 20 and R >= 5:
-1. An empty adjacent cell is found (or division fails)
-2. Parent pays 20 E and 5 R
-3. Remaining resources split: parent keeps 60%, daughter gets 40%
-4. Daughter receives a (possibly mutated) copy of the parent's genome
+**Reproduction:** divide fires + E ≥ 20 + R ≥ 5 → find empty neighbor → parent pays costs → resources split 60/40 → daughter gets mutated genome copy → **auto-bond** created between parent and daughter (strength 0.1, breaks in ~50 ticks unless reinforced).
 
-**Mutation operators** (applied on division):
-- **Weight perturbation** (p=0.03 per weight): add Gaussian noise (sigma=0.1)
-- **Weight reset** (p=0.001 per weight): set to random value in [-1, 1]
-- **Node knockout** (p=0.0005 per hidden node): zero all outgoing weights
+**Bonding:** near-permanent bonds (decay 0.001/tick, reinforced at 0.03/tick when both cells fire bond). Bonded cells automatically share resources (with 30% transfer loss). Clusters up to 22 cells form with mesh, chain, and star topologies.
 
-**Conflict resolution:** When multiple cells try to move to (or divide into) the same position, the lowest cell index wins. This is implemented with a two-phase atomic claim system using `ti.atomic_min`.
+## Current Results (v5.0, 50k-tick runs)
 
-### Initial Conditions
+### CRN vs Neural Comparison
 
-1,000 cells are placed randomly in the light zone, each with a unique genome. Weights are drawn from N(0, 0.01) so initial behavior is near-random, except for biased output layer biases:
-- Divide (output 5): bias=+0.5 → fires reliably when resources are available
-- Attack (output 8): bias=-1.0 → suppressed to prevent random killing
-- Move (output 0): bias=0.0 → neutral (easily activated by a single mutation)
+| Metric | CRN | Neural |
+|--------|-----|--------|
+| Population (50k) | **3,498** | 1,155 |
+| Movement | 1.4% (sessile) | **29%** (chemotaxis) |
+| Bonding | 7.3% | 10.7% |
+| Shannon entropy | **8.07** (rising) | 7.05 (stable) |
+| Lineage diversity | **43 root lines** | 13 root lines |
+| Max cluster size | **22 cells** | 14 cells |
+| Cluster topologies | mesh, chain, star | pairs, chains |
 
-This gives cells a viable starting phenotype (photosynthesize, accumulate resources, divide) that evolution can modify.
+**CRN** achieves 3× neural population through metabolic efficiency (sessile "plant" strategy). **Neural** achieves behavioral complexity (active chemotaxis) at a carrying capacity cost. Both maintain high genome diversity with no plateau detected.
+
+### Evolutionary Milestones
+
+| Stage | Status | Evidence |
+|-------|--------|----------|
+| 1. Stable ecosystems | **Achieved** | Populations survive indefinitely, chemical cycling |
+| 2. Behavioral evolution | **Achieved** | Neural: 29% chemotaxis. CRN: efficient sessile strategy |
+| 3. Ecological complexity | **Partial** | Predation economics fixed, bonds stable, no arms races yet |
+| 4. Proto-multicellularity | **In progress** | Clusters up to 22 cells, 94% facing coordination, mesh topologies |
+| 5. Sustained OEE | **Promising** | CRN entropy rising, not plateaued at 50k ticks |
+
+## Analysis
+
+```bash
+# Run full analysis suite on latest run
+python analysis/run_all.py
+
+# Analyze a specific run
+python analysis/run_all.py runs/20260319_221948
+
+# Compare two runs
+python analysis/compare_runs.py runs/<crn_run> runs/<neural_run>
+
+# Validation harness (after code changes)
+python validate.py --genome crn --ticks 30000
+python validate.py --genome neural --ticks 10000
+```
+
+Analysis outputs go to `analysis/output/<run_name>/`:
+
+| Script | Output | Description |
+|--------|--------|-------------|
+| `study.py` | STUDY.md, evolution_report.png | Phase detection, rates, 6-panel dynamics |
+| `crn_analysis.py` | CRN_ANALYSIS.md, crn_evolution.png | 9-panel CRN diagnostics |
+| `lineage_analysis.py` | LINEAGE_ANALYSIS.md, lineage_tree.png | Phylogenetic trees, selective sweeps |
+| `spatial_analysis.py` | SPATIAL_ANALYSIS.md, spatial_*.png | Spatial distribution, zone occupation |
+| `bonding_analysis.py` | BONDING_ANALYSIS.md, bonding_*.png | Cluster topology, facing coordination |
+| `burst_analysis.py` | BURST_ANALYSIS.md, filmstrip_*.png | Frame-by-frame movement |
+| `compare_runs.py` | comparison_*.png, report.md | Side-by-side dynamics + OEE |
+| `validate.py` | VALIDATION_REPORT.txt | 11-16 automated correctness checks |
 
 ## Project Structure
 
 ```
 cybercell/
 ├── config.py                  # All tunable parameters (single source of truth)
-├── main.py                    # Entry point (CLI args: --headless, --ticks, --backend, --log-interval)
+├── main.py                    # Entry point (--headless, --ticks, --genome, --backend)
+├── validate.py                # Backward-compat wrapper → analysis/validate.py
+├── CLAUDE.md                  # Full project brief and architecture docs
+├── RESEARCH.md                # Literature review informing design decisions
 ├── world/
 │   ├── grid.py                # Light field, zones, day/night cycle
-│   └── chemistry.py           # Chemical fields, diffusion, decay, deposits
+│   ├── chemistry.py           # Chemical fields, diffusion, deposits
+│   └── archipelago.py         # Soft-wall quadrants, migration
 ├── cell/
-│   ├── cell_state.py          # Cell state fields + grid occupancy + free-slot stack
-│   ├── genome.py              # Genome table, network evaluation, mutation
-│   ├── sensing.py             # 18 sensory inputs (parallel kernel)
-│   ├── actions.py             # 10 actions with two-phase conflict resolution
-│   ├── bonding.py             # Bond formation, unbonding, chemical sharing
-│   └── lifecycle.py           # Photosynthesis, passive eating, metabolism, death
+│   ├── cell_state.py          # Cell state fields, grid occupancy, free-slot stack
+│   ├── genome.py              # Neural network genome (34→32→32→14)
+│   ├── crn_genome.py          # CRN genome (16 chemicals, 3 zones, 16 reactions)
+│   ├── sensing.py             # 34 sensory inputs with gradient noise
+│   ├── actions.py             # 14 actions, two-phase conflict resolution, auto-bonds
+│   ├── bonding.py             # Bond formation, decay, lossy sharing, signal relay
+│   └── lifecycle.py           # Photosynthesis, metabolism, death, kill rewards
 ├── simulation/
-│   ├── engine.py              # Tick loop: environment → sense → think → act → resolve
-│   ├── checkpoint.py          # Save/load full simulation state for resume & backend switching
-│   └── spawner.py             # Initial cell seeding
+│   ├── engine.py              # Tick loop (dispatches neural or CRN)
+│   ├── spawner.py             # Initial seeding and emergency respawn
+│   ├── checkpoint.py          # Save/load full simulation state
+│   └── env_api.py             # Runtime environment modification API
 ├── visualization/
-│   └── renderer.py            # ti.GUI rendering, overlays, stats
+│   └── renderer.py            # Taichi GUI rendering, overlays, stats
 ├── analysis/
-│   ├── metrics.py             # Population stats, Shannon diversity, movement/chemotaxis metrics
-│   ├── logger.py              # JSONL snapshots to runs/ directory
-│   ├── study.py               # Evolutionary dynamics analysis, phase detection, report generation
-│   └── output/                # Generated plots and writeups (from study.py)
+│   ├── metrics.py             # Population stats, diversity, CRN snapshots
+│   ├── logger.py              # Periodic snapshots to disk
+│   ├── oee_metrics.py         # Open-ended evolution metrics (Bedau, MODES, MI)
+│   ├── crn_analysis.py        # CRN deep diagnostics
+│   ├── compare_runs.py        # Side-by-side run comparison
+│   ├── validate.py            # Validation harness (11-16 checks)
+│   ├── run_all.py             # Unified CLI for all analyses
+│   ├── study.py               # Evolutionary dynamics study
+│   ├── lineage_analysis.py    # Phylogenetic analysis
+│   ├── spatial_analysis.py    # Spatial distribution
+│   ├── bonding_analysis.py    # Bond network analysis
+│   └── burst_analysis.py      # Frame-by-frame analysis
 └── tests/
-    ├── test_chemistry.py      # Diffusion conservation, wrapping, decay
-    ├── test_energy.py         # Photosynthesis, metabolism, death mechanics
-    ├── test_genome.py         # Network outputs, weight layout, mutation validity
-    └── test_lifecycle.py      # Division requirements, resource splitting
+    ├── test_chemistry.py
+    ├── test_energy.py
+    ├── test_genome.py
+    ├── test_lifecycle.py
+    └── test_predation.py
 ```
-
-### Tick Sequence
-
-Each simulation tick executes these steps in order:
-
-1. `compute_light` — update light field for day/night cycle
-2. `diffuse_all` — diffuse S, R, G chemicals across the grid
-3. `replenish_deposits` — add chemicals at deposit locations
-4. `photosynthesis` — passive energy gain from light
-5. `eat_passive` — passive chemical absorption (small amount)
-6. `compute_sensory_inputs` — read environment into 18-input vector
-7. `evaluate_all_networks` — forward pass through each cell's neural net
-8. `clear_intentions` — reset movement/division claim fields
-9. `process_turns` — handle turning
-10. `process_movement` (phase 1 + 2) — claim targets, resolve conflicts, move
-11. `process_eat` — neural-net-gated eating (bonus absorption)
-12. `process_emit_signal` — release G chemical
-13. `process_repair` — spend S to fix membrane
-14. `process_attack` — damage adjacent cell
-15. `process_bond` (phase 1 + 2) — mutual bond formation
-16. `process_unbond` — unilateral bond breaking
-17. `process_bond_sharing` — chemical sharing between bonded cells
-18. `process_divide` (phase 1 + 2) — claim targets, resolve, create daughters
-19. `process_mutations` — apply mutations to new genomes (GPU kernel)
-20. `apply_metabolism` — deduct energy, age cells, apply membrane decay
-21. `check_death` — kill depleted cells, spill chemicals, clean bonds
-22. `swap_buffers` — toggle diffusion double-buffer
-23. Periodic: genome garbage collection, metric snapshots
-
-## Evolutionary Milestones
-
-### Stage 1 (achieved): Stable Autotroph Populations
-- Cells survive and reproduce in the light zone
-- Chemical deposits cycle through the ecosystem
-- Multi-generational populations with genome diversity
-
-### Stage 2 (achieved): Chemotaxis
-- Cells evolved directed movement toward chemical deposits (movement fraction: 4.7% to 63.6%)
-- Population spread from light zone (avg x=86) into the dim zone (avg x=273)
-- Multiple survival strategies coexist (Shannon diversity index: 9.38)
-- See `analysis/output/STUDY.md` for the full writeup and `analysis/output/evolution_report.png` for plots
-
-### Stage 3 (in progress): Predator-Prey Dynamics
-- Attack output bias lowered from -1.0 to -0.3 (sigmoid=0.43, reachable by 1-2 mutations)
-- Prey quality sensing added (inputs 16-17: energy and membrane of cell ahead)
-- Bonding implemented (mutual formation, unilateral breaking, chemical sharing)
-- Predation metrics tracked (attack_fraction, deaths_by_attack, bond_fraction)
-- Membrane integrity heatmap overlay (key `5`) shows combat zones
-
-### Stage 4 (future): Multicellularity
-- Bonded cell clusters with differentiated behavior
-- Bonding infrastructure is now in place (see Stage 3)
-
-## Analysis
-
-After a simulation run, analyze the evolutionary dynamics:
-
-```bash
-# Analyze all runs (picks the longest automatically)
-python analysis/study.py
-
-# Analyze a specific run
-python analysis/study.py runs/20260318_202818
-
-# Compare two runs side by side
-python analysis/study.py --compare runs/<run_a> runs/<run_b>
-```
-
-Outputs are saved to `analysis/output/`:
-- `evolution_report.png` — 6-panel figure (population, movement, spatial, diversity, energy, phases)
-- `comparison.png` — side-by-side comparison of two runs
-- `STUDY.md` — full markdown writeup with detected evolutionary phases and key findings
-
-Requires `matplotlib` (`pip install matplotlib`).
-
-## Running Tests
-
-```bash
-python tests/test_chemistry.py
-python tests/test_energy.py
-python tests/test_genome.py
-python tests/test_lifecycle.py
-```
-
-## Configuration
-
-All parameters are in `config.py`. Key tuning levers if evolution stalls:
-
-| Problem | Adjust |
-|---------|--------|
-| Population crashes | Increase `PHOTOSYNTHESIS_RATE` or decrease `BASAL_METABOLISM` |
-| Population explodes | Decrease `PHOTOSYNTHESIS_RATE` or increase `MOVE_COST` |
-| No reproduction | Increase `DEPOSIT_REPLENISH_RATE` or decrease `DIVIDE_R_COST` |
-| Genomes converge | Increase `MUTATION_RATE_PERTURB` |
-| Genomes dissolve into noise | Decrease `MUTATION_RATE_PERTURB` |
 
 ## Performance
-
-The `--backend auto` mode (default) benchmarks available backends on first run and caches the result.
 
 | Platform | Backend | Ticks/sec (~1K cells) |
 |----------|---------|----------------------|
 | Windows RTX 5080 | CUDA | ~900 |
 | Windows RTX 5080 | CPU | ~450 |
 | macOS M2 Pro | Metal | ~TBD |
-| macOS M2 Pro | CPU | ~50 |
 
-CUDA performance is roughly constant across population sizes (all mutation/evolution logic runs on GPU). Use `--rebenchmark` after significant config changes.
+Use `--backend auto` (default) to benchmark and cache the fastest backend. `--rebenchmark` to re-test.
 
-## Known Issues
+## Configuration
 
-- **macOS Metal + GUI**: Previously reported as crashing WindowServer ([taichi-dev/taichi#8775](https://github.com/taichi-dev/taichi/issues/8775)), but tested working on macOS 15 + Apple Silicon with Taichi 1.7.4. The `--backend auto` mode will benchmark Metal and use it if fastest.
-- **Checkpoint compatibility**: The genome size changed from 1,930 to 1,994 weights (2 new sensory inputs). Checkpoints from previous versions are incompatible — start fresh.
+All parameters in `config.py`. Key levers:
+
+| Problem | Adjust |
+|---------|--------|
+| Population crashes | Increase `PHOTOSYNTHESIS_RATE` or decrease `BASAL_METABOLISM` |
+| No reproduction | Increase `DEPOSIT_REPLENISH_RATE` or decrease `DIVIDE_R_COST` |
+| Genomes converge | Increase mutation rates or `ISLAND_ENV_VARIANCE` |
+| No movement evolves | Make deposits relocate more frequently |
+| Bonding collapses | Decrease `BOND_DECAY_RATE` |
 
 ## Requirements
 
 - Python 3.11+
 - Taichi >= 1.7.0
 - NumPy >= 1.24.0
+- matplotlib (for analysis)
