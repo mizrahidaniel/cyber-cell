@@ -134,3 +134,6 @@ GUI_FPS = 60
 SNAPSHOT_INTERVAL = 1000       # ticks between snapshots
 SPATIAL_SNAPSHOT_INTERVAL = 10000  # ticks between spatial snapshots (positions + bonds)
 GENOME_GC_INTERVAL = 1000     # ticks between genome garbage collection
+BURST_SNAPSHOT_INTERVAL = 50000   # ticks between burst capture windows
+BURST_SNAPSHOT_LENGTH = 20        # consecutive frames per burst
+GENOME_WEIGHT_SNAPSHOT_INTERVAL = 50000  # ticks between genome weight snapshots

@@ -19,7 +19,7 @@ from cell.cell_state import init_cell_state, cell_count
 from cell.lifecycle import photosynthesis, eat_passive, apply_metabolism, check_death
 from cell.genome import (
     init_genome_table, evaluate_all_networks, process_mutations,
-    garbage_collect_genomes, genome_count,
+    garbage_collect_genomes, genome_count, get_mutation_events,
 )
 from cell.sensing import compute_sensory_inputs
 from cell.actions import (
@@ -183,7 +183,13 @@ class SimulationEngine:
         # 4. Division
         process_divide_phase1()
         process_divide_phase2()
-        process_mutations(self.mutation_rng)
+        process_mutations(self.mutation_rng, self.tick_count)
+
+        # Log lineage events
+        if self.logger:
+            events = get_mutation_events()
+            if events:
+                self.logger.log_lineage_events(events)
 
         # 5. Metabolism and death
         apply_metabolism()
@@ -199,6 +205,10 @@ class SimulationEngine:
         # 8. Periodic logging
         if self.logger and self.tick_count % SNAPSHOT_INTERVAL == 0:
             self.logger.snapshot(self.tick_count)
+
+        # 8b. Burst snapshots (checked every tick, lightweight)
+        if self.logger:
+            self.logger.check_burst_snapshot(self.tick_count)
 
         # 9. Check for backend auto-switch
         if (self.auto_switch and self.tick_count > 0

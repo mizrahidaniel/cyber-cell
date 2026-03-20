@@ -23,6 +23,12 @@ genome_count = ti.field(dtype=ti.i32, shape=())
 genome_free_list = ti.field(dtype=ti.i32, shape=(MAX_GENOMES,))
 genome_free_count = ti.field(dtype=ti.i32, shape=())
 
+# Lineage tracking
+genome_parent_id = ti.field(dtype=ti.i32, shape=(MAX_GENOMES,))
+genome_birth_tick = ti.field(dtype=ti.i32, shape=(MAX_GENOMES,))
+_mutation_events = ti.field(dtype=ti.i32, shape=(MAX_CELLS, 3))  # parent_gid, child_gid, tick
+_mutation_event_count = ti.field(dtype=ti.i32, shape=())
+
 # Per-cell scratch space for network evaluation
 hidden1 = ti.field(dtype=ti.f32, shape=(MAX_CELLS, NETWORK_HIDDEN_SIZE))
 hidden2 = ti.field(dtype=ti.f32, shape=(MAX_CELLS, NETWORK_HIDDEN_SIZE))
@@ -118,6 +124,10 @@ def init_genome_table(count: int = INITIAL_CELL_COUNT, seed: int = RANDOM_SEED):
     genome_free_count[None] = MAX_GENOMES - count
     genome_count[None] = count
 
+    # Initialize lineage tracking
+    genome_parent_id.from_numpy(np.full(MAX_GENOMES, -1, dtype=np.int32))
+    genome_birth_tick.fill(0)
+
 
 def allocate_genome_python() -> int:
     """Allocate a genome slot from the free list (Python-side)."""
@@ -158,7 +168,7 @@ def _collect_pending_mutations():
 
 
 @ti.kernel
-def _apply_mutations_gpu():
+def _apply_mutations_gpu(tick: ti.i32):
     """Apply mutation operators entirely on GPU — no CPU transfer needed.
 
     For each cell needing mutation:
@@ -166,6 +176,7 @@ def _apply_mutations_gpu():
     2. Copy parent weights to new genome
     3. Apply perturbation, reset, and knockout mutations using ti.random()
     4. Update cell's genome_id and ref counts
+    5. Record lineage events for new genomes
     """
     for idx in range(_pending_count[None]):
         cell_idx = _pending_mutations[idx]
@@ -221,23 +232,42 @@ def _apply_mutations_gpu():
             ti.atomic_sub(genome_count[None], 1)
             ti.atomic_add(genome_ref_count[parent_gid], 1)
         else:
-            # Mutation occurred — update refs
+            # Mutation occurred — update refs and record lineage
             genome_ref_count[new_gid] = 1
             ti.atomic_sub(genome_ref_count[parent_gid], 1)
             cell_genome_id[cell_idx] = new_gid
+            genome_parent_id[new_gid] = parent_gid
+            genome_birth_tick[new_gid] = tick
+            evt_idx = ti.atomic_add(_mutation_event_count[None], 1)
+            if evt_idx < MAX_CELLS:
+                _mutation_events[evt_idx, 0] = parent_gid
+                _mutation_events[evt_idx, 1] = new_gid
+                _mutation_events[evt_idx, 2] = tick
 
         needs_mutation[cell_idx] = 0
 
 
-def process_mutations(rng=None):
+def process_mutations(rng=None, tick=0):
     """Process mutations for all newly born cells (GPU-side).
 
     The rng parameter is kept for API compatibility but is unused —
     all randomness now comes from ti.random() on the GPU.
     """
+    _mutation_event_count[None] = 0
     _collect_pending_mutations()
     if _pending_count[None] > 0:
-        _apply_mutations_gpu()
+        _apply_mutations_gpu(tick)
+
+
+def get_mutation_events():
+    """Read mutation events recorded this tick. Returns list of (parent_gid, child_gid, tick)."""
+    count = int(_mutation_event_count[None])
+    if count == 0:
+        return []
+    count = min(count, MAX_CELLS)
+    events_np = _mutation_events.to_numpy()[:count]
+    return [(int(events_np[i, 0]), int(events_np[i, 1]), int(events_np[i, 2]))
+            for i in range(count)]
 
 
 @ti.kernel

@@ -257,13 +257,21 @@ cybercell/
 │   └── renderer.py            ← Taichi GUI rendering, color mapping, overlays, stats display.
 ├── analysis/
 │   ├── __init__.py
-│   ├── metrics.py             ← Population stats, diversity, spatial snapshots.
-│   ├── logger.py              ← Periodic metric + spatial snapshots to disk.
+│   ├── metrics.py             ← Population stats, diversity, spatial + genome weight snapshots.
+│   ├── logger.py              ← Periodic metric, spatial, burst, genome weight, lineage logging.
 │   ├── study.py               ← Evolutionary dynamics analysis and phase detection.
 │   ├── spatial_analysis.py    ← Spatial structure detection (clusters, lines, density).
 │   ├── bonding_analysis.py    ← Bonding topology, coordination, persistence analysis.
+│   ├── lineage_analysis.py    ← Phylogenetic trees, selective sweeps, weight evolution.
+│   ├── burst_analysis.py      ← Frame-by-frame movement, division, and death detection.
 │   └── output/{timestamp}/    ← Versioned analysis outputs (one folder per run).
-├── runs/{timestamp}/          ← Simulation data (metrics.jsonl + spatial/ snapshots).
+├── runs/{timestamp}/          ← Simulation data:
+│   ├── metrics.jsonl          ←   Population metrics every SNAPSHOT_INTERVAL ticks.
+│   ├── lineage.jsonl          ←   Parent→child genome mutation events (every tick).
+│   ├── spatial/               ←   Spatial snapshots (positions + bonds) every SPATIAL_SNAPSHOT_INTERVAL.
+│   ├── burst/                 ←   Burst snapshots (20 consecutive frames) every BURST_SNAPSHOT_INTERVAL.
+│   │   └── burst_{tick}/      ←     frame_00.npz .. frame_19.npz per burst window.
+│   └── genomes/               ←   Genome weight snapshots every GENOME_WEIGHT_SNAPSHOT_INTERVAL.
 └── tests/
     ├── test_chemistry.py      ← Verify diffusion conserves mass, decay works correctly.
     ├── test_energy.py         ← Verify energy conservation (total energy in system is bounded).
@@ -325,7 +333,10 @@ Steps 1-6 are complete. Step 7 is ongoing.
 ### Step 6: Metrics and Analysis ✅
 - Implement population tracking, genome diversity measures, behavioral classification.
 - Implement periodic state snapshots (save to disk for offline analysis).
-- Implement a lineage tracker (which genomes descended from which).
+- Implement lineage tracker: `genome_parent_id` and `genome_birth_tick` fields track ancestry on GPU; mutation events logged to `lineage.jsonl` each tick.
+- Implement burst snapshots: 20 consecutive frames captured every `BURST_SNAPSHOT_INTERVAL` ticks for frame-by-frame analysis of movement and division.
+- Implement genome weight snapshots: active genome weights saved every `GENOME_WEIGHT_SNAPSHOT_INTERVAL` ticks for weight evolution analysis.
+- Analysis scripts: `study.py` (evolutionary dynamics), `spatial_analysis.py` (clusters/density), `bonding_analysis.py` (bond topology), `lineage_analysis.py` (phylogenetic trees, sweeps, weight evolution), `burst_analysis.py` (frame-by-frame movement/division detection).
 - Add visualization overlays for species (color by genome similarity), energy flow, births/deaths.
 
 ### Step 7: Parameter Tuning and Extended Runs (Ongoing)

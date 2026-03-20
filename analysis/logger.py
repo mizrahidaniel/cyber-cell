@@ -8,9 +8,13 @@ import numpy as np
 
 from analysis.metrics import (
     get_population_stats, get_genome_diversity, get_movement_stats,
-    get_predation_stats, get_spatial_snapshot,
+    get_predation_stats, get_spatial_snapshot, get_genome_weight_snapshot,
+    get_burst_spatial_snapshot,
 )
-from config import SPATIAL_SNAPSHOT_INTERVAL
+from config import (
+    SPATIAL_SNAPSHOT_INTERVAL, BURST_SNAPSHOT_INTERVAL,
+    BURST_SNAPSHOT_LENGTH, GENOME_WEIGHT_SNAPSHOT_INTERVAL,
+)
 
 
 class SimulationLogger:
@@ -20,8 +24,23 @@ class SimulationLogger:
         os.makedirs(self.log_dir, exist_ok=True)
         self.spatial_dir = os.path.join(self.log_dir, "spatial")
         os.makedirs(self.spatial_dir, exist_ok=True)
+        self.burst_dir = os.path.join(self.log_dir, "burst")
+        os.makedirs(self.burst_dir, exist_ok=True)
+        self.genomes_dir = os.path.join(self.log_dir, "genomes")
+        os.makedirs(self.genomes_dir, exist_ok=True)
+
         self.log_path = os.path.join(self.log_dir, "metrics.jsonl")
         self._file = open(self.log_path, "w")
+
+        self.lineage_path = os.path.join(self.log_dir, "lineage.jsonl")
+        self._lineage_file = open(self.lineage_path, "w")
+        self._lineage_buffer = []
+
+        # Burst snapshot state machine
+        self._burst_active = False
+        self._burst_start_tick = -1
+        self._burst_frame = 0
+        self._burst_subdir = None
 
     def snapshot(self, tick: int):
         """Record a snapshot of simulation metrics."""
@@ -47,5 +66,53 @@ class SimulationLogger:
             path = os.path.join(self.spatial_dir, f"spatial_{tick:08d}.npz")
             np.savez_compressed(path, **spatial)
 
+        # Save genome weights at configured interval
+        if tick > 0 and tick % GENOME_WEIGHT_SNAPSHOT_INTERVAL == 0:
+            self.save_genome_weights(tick)
+
+    def log_lineage_events(self, events):
+        """Append lineage events to lineage.jsonl. Flushes every 100 events."""
+        for parent_gid, child_gid, tick in events:
+            self._lineage_buffer.append(
+                json.dumps({"parent": parent_gid, "child": child_gid, "tick": tick})
+            )
+        if len(self._lineage_buffer) >= 100:
+            self._flush_lineage()
+
+    def _flush_lineage(self):
+        if self._lineage_buffer:
+            self._lineage_file.write("\n".join(self._lineage_buffer) + "\n")
+            self._lineage_file.flush()
+            self._lineage_buffer.clear()
+
+    def check_burst_snapshot(self, tick: int):
+        """State machine: start burst at interval, capture N consecutive frames."""
+        if self._burst_active:
+            # Currently capturing — save this frame
+            snap = get_burst_spatial_snapshot()
+            path = os.path.join(self._burst_subdir,
+                                f"frame_{self._burst_frame:02d}.npz")
+            np.savez_compressed(path, **snap)
+            self._burst_frame += 1
+            if self._burst_frame >= BURST_SNAPSHOT_LENGTH:
+                self._burst_active = False
+                print(f"  [burst] Captured {BURST_SNAPSHOT_LENGTH} frames at tick {self._burst_start_tick}")
+        elif tick > 0 and tick % BURST_SNAPSHOT_INTERVAL == 0:
+            # Start a new burst
+            self._burst_active = True
+            self._burst_start_tick = tick
+            self._burst_frame = 0
+            self._burst_subdir = os.path.join(
+                self.burst_dir, f"burst_{tick:08d}")
+            os.makedirs(self._burst_subdir, exist_ok=True)
+
+    def save_genome_weights(self, tick: int):
+        """Save active genome weights, lineage info, and ref counts."""
+        snap = get_genome_weight_snapshot()
+        path = os.path.join(self.genomes_dir, f"genomes_{tick:08d}.npz")
+        np.savez_compressed(path, **snap)
+
     def close(self):
+        self._flush_lineage()
         self._file.close()
+        self._lineage_file.close()

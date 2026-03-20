@@ -8,7 +8,11 @@ from cell.cell_state import (
     cell_alive, cell_energy, cell_age, cell_repmat, cell_x, cell_y,
     cell_membrane, cell_bonds, cell_genome_id, cell_facing,
 )
-from cell.genome import genome_ref_count, action_outputs
+from cell.genome import (
+    genome_ref_count, action_outputs, genome_weights,
+    genome_parent_id, genome_birth_tick,
+)
+from config import GENOME_SIZE
 from cell.lifecycle import deaths_by_attack, deaths_by_starvation
 
 # Birth/death counters (reset periodically)
@@ -121,6 +125,53 @@ def get_spatial_snapshot() -> dict:
 
     return {"positions": positions, "genome_ids": genome_ids,
             "facings": facings, "bonds": bonds}
+
+
+def get_genome_weight_snapshot() -> dict:
+    """Capture weights, lineage, and ref counts for all active genomes."""
+    refs = genome_ref_count.to_numpy()
+    active_mask = refs > 0
+    active_ids = np.where(active_mask)[0].astype(np.int32)
+
+    if len(active_ids) == 0:
+        return {"genome_ids": np.empty(0, dtype=np.int32),
+                "weights": np.empty((0, GENOME_SIZE), dtype=np.float32),
+                "ref_counts": np.empty(0, dtype=np.int32),
+                "parent_ids": np.empty(0, dtype=np.int32),
+                "birth_ticks": np.empty(0, dtype=np.int32)}
+
+    all_weights = genome_weights.to_numpy()
+    weights = all_weights[active_ids]
+    ref_counts = refs[active_ids]
+    parent_ids = genome_parent_id.to_numpy()[active_ids]
+    birth_ticks = genome_birth_tick.to_numpy()[active_ids]
+
+    return {"genome_ids": active_ids, "weights": weights,
+            "ref_counts": ref_counts.astype(np.int32),
+            "parent_ids": parent_ids.astype(np.int32),
+            "birth_ticks": birth_ticks.astype(np.int32)}
+
+
+def get_burst_spatial_snapshot() -> dict:
+    """Capture cell positions, energy, and age for burst frame analysis."""
+    alive_np = cell_alive.to_numpy() == 1
+    count = int(alive_np.sum())
+
+    if count == 0:
+        return {"positions": np.empty((0, 2), dtype=np.int32),
+                "genome_ids": np.empty(0, dtype=np.int32),
+                "energies": np.empty(0, dtype=np.float32),
+                "ages": np.empty(0, dtype=np.int32)}
+
+    xs = cell_x.to_numpy()[alive_np]
+    ys = cell_y.to_numpy()[alive_np]
+    positions = np.column_stack([xs, ys]).astype(np.int32)
+    genome_ids = cell_genome_id.to_numpy()[alive_np].astype(np.int32)
+    energies = cell_energy.to_numpy()[alive_np].astype(np.float32)
+    ages = cell_age.to_numpy()[alive_np].astype(np.int32)
+
+    return {"positions": positions, "genome_ids": genome_ids,
+            "energies": energies, "ages": ages}
 
 
 def get_predation_stats() -> dict:
