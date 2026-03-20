@@ -7,14 +7,14 @@ from config import (
     PHOTOSYNTHESIS_RATE, BASAL_METABOLISM, E_DECAY_FLAT, NETWORK_COST,
     ENERGY_ZERO_MEMBRANE_DAMAGE, AGE_MEMBRANE_DECAY, MAX_CELL_AGE,
     EAT_ABSORB_CAP, EAT_COST, S_ENERGY_VALUE, R_ENERGY_VALUE,
-    PASSIVE_EAT_CAP,
+    PASSIVE_EAT_CAP, KILL_ABSORPTION_RATE, KILL_ENERGY_BONUS,
 )
 from config import BOND_SIGNAL_CHANNELS
 from cell.cell_state import (
     cell_alive, cell_x, cell_y, cell_energy, cell_structure, cell_repmat,
     cell_signal, cell_membrane, cell_age, cell_bonds, cell_bond_strength,
-    cell_bond_signal_out, cell_bond_signal_in, grid_cell_id,
-    cell_count, free_slots, free_slot_count,
+    cell_bond_signal_out, cell_bond_signal_in, cell_last_attacker,
+    grid_cell_id, cell_count, free_slots, free_slot_count,
 )
 from world.grid import light_field
 
@@ -116,10 +116,23 @@ def check_death(env_S: ti.template(), env_R: ti.template(),
                         cell_bond_signal_out[i, b, ch] = 0.0
                         cell_bond_signal_in[i, b, ch] = 0.0
 
-            # Spill internal chemicals to environment
-            env_S[x, y] += cell_structure[i] + cell_energy[i] * 0.5
-            env_R[x, y] += cell_repmat[i]
-            env_G[x, y] += cell_signal[i]
+            # Enhanced predation: transfer resources to killer if one exists
+            attacker = cell_last_attacker[i]
+            absorb = KILL_ABSORPTION_RATE
+            if attacker >= 0 and cell_alive[attacker] == 1:
+                # Killer absorbs a fraction of victim's chemicals
+                cell_energy[attacker] += cell_energy[i] * absorb + KILL_ENERGY_BONUS
+                cell_structure[attacker] += cell_structure[i] * absorb
+                cell_repmat[attacker] += cell_repmat[i] * absorb
+                # Remaining fraction spills to environment
+                env_S[x, y] += cell_structure[i] * (1.0 - absorb) + cell_energy[i] * 0.5 * (1.0 - absorb)
+                env_R[x, y] += cell_repmat[i] * (1.0 - absorb)
+                env_G[x, y] += cell_signal[i]
+            else:
+                # No killer — spill everything to environment
+                env_S[x, y] += cell_structure[i] + cell_energy[i] * 0.5
+                env_R[x, y] += cell_repmat[i]
+                env_G[x, y] += cell_signal[i]
 
             # Clear cell
             cell_alive[i] = 0
@@ -129,6 +142,7 @@ def check_death(env_S: ti.template(), env_R: ti.template(),
             cell_signal[i] = 0.0
             cell_membrane[i] = 0.0
             cell_age[i] = 0
+            cell_last_attacker[i] = -1
 
             # Free grid cell
             grid_cell_id[x, y] = -1

@@ -18,6 +18,9 @@ cell_age = ti.field(dtype=ti.i32, shape=(MAX_CELLS,))
 cell_genome_id = ti.field(dtype=ti.i32, shape=(MAX_CELLS,))
 cell_facing = ti.field(dtype=ti.i32, shape=(MAX_CELLS,))
 
+# Last attacker tracking for predation rewards (-1 = none)
+cell_last_attacker = ti.field(dtype=ti.i32, shape=(MAX_CELLS,))
+
 # Bond connections (-1 = no bond)
 cell_bonds = ti.field(dtype=ti.i32, shape=(MAX_CELLS, 4))
 
@@ -43,6 +46,7 @@ cell_count = ti.field(dtype=ti.i32, shape=())
 def _init_fields():
     for i in range(MAX_CELLS):
         cell_alive[i] = 0
+        cell_last_attacker[i] = -1
         free_slots[i] = i
         for b in range(4):
             cell_bonds[i, b] = -1

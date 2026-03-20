@@ -93,6 +93,8 @@ R_ENERGY_VALUE = 0.5
 EAT_ABSORB_CAP = 2.0          # max chemical absorbed per eat action per tick
 PASSIVE_EAT_CAP = 0.05        # max chemical absorbed passively per tick (no neural net)
 ATTACK_MEMBRANE_DAMAGE = 8.0
+KILL_ABSORPTION_RATE = 0.5        # fraction of victim's chemicals absorbed by killer
+KILL_ENERGY_BONUS = 2.0           # flat energy bonus on kill (conservative start)
 
 # =============================================================================
 # Genome / Neural Network

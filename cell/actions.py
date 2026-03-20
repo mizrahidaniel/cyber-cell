@@ -14,8 +14,8 @@ from config import (
 from cell.cell_state import (
     cell_alive, cell_x, cell_y, cell_energy, cell_structure, cell_repmat,
     cell_signal, cell_membrane, cell_age, cell_genome_id, cell_facing,
-    cell_bonds, cell_bond_signal_out, grid_cell_id, cell_count,
-    free_slots, free_slot_count,
+    cell_bonds, cell_bond_signal_out, cell_last_attacker, grid_cell_id,
+    cell_count, free_slots, free_slot_count,
 )
 from cell.genome import action_outputs, needs_mutation
 from cell.sensing import facing_offset
@@ -191,6 +191,7 @@ def process_attack():
                 target = grid_cell_id[ax, ay]
                 if target >= 0 and cell_alive[target] == 1:
                     ti.atomic_sub(cell_membrane[target], ATTACK_MEMBRANE_DAMAGE)
+                    cell_last_attacker[target] = i
 
                 cell_energy[i] -= ATTACK_COST
                 cell_energy[i] = ti.max(0.0, cell_energy[i])
