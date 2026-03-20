@@ -1,6 +1,6 @@
 # CyberCell: Evolutionary Intelligence Simulation — Project Brief
 
-**Document version:** v6.0 — Beer-Lambert light attenuation (density-dependent shading). CRN movement 1.4% → 8.9% (6.4x increase). MI improved 4.3x (CRN) and 1.5x (neural). Predation absorption 12% → 35%. Sessile optimum partially broken — cells spread into dim zone under density pressure. Empirical findings from 50k-tick comparative runs with attenuation documented.
+**Document version:** v7.0 — Metabolic waste system (photosynthesis byproduct, local toxicity). Zone population breakdown + waste metrics logged. compare_runs.py genome label auto-detection. 200k-tick comparative runs with waste+attenuation. Neural evolved dim-zone colonization (56% dim zone, avg X=158). Waste parameters too mild — toxicity threshold never reached. CRN sessile optimum unbroken.
 
 ---
 
@@ -52,7 +52,7 @@ All systems built, working, and validated on CUDA.
 500x500 toroidal grid. Three light zones (bright/dim/dark). Day/night cycle (period 1000 ticks). Patchy resource deposits (radius 10, 20% relocate every 25k ticks). Archipelago: 4 soft-wall quadrants with +/-30% parameter variance, uniform-random migration (1 cell every 200 ticks — continuous trickle matching Wright's Nm≈1 rule). **Beer-Lambert light attenuation**: density-dependent shading reduces photosynthesis in crowded areas. `local_density` computed in radius-2 neighborhood; `light *= exp(-k * density)` with k=0.03. Creates 26-45% light reduction at typical occupied densities (10-20 neighbors).
 
 ### Chemistry
-4 chemicals: Energy (E), Structure (S), Replication Material (R), Signal (G). Double-buffered diffusion. Gradient noise (sigma=0.15) on all 6 gradient sensing channels.
+5 chemicals: Energy (E), Structure (S), Replication Material (R), Signal (G), Waste (W). Double-buffered diffusion. Gradient noise (sigma=0.15) on all 6 gradient sensing channels. **Metabolic waste**: photosynthesis produces waste proportional to energy gained (rate 0.01). Waste diffuses (5%/tick), decays (0.002/tick, half-life ~350 ticks), and causes membrane damage above threshold (0.5). Cells cannot sense waste directly — only indirectly through light/energy changes.
 
 ### CyberCell
 34 sensory inputs (18 base + 16 bond signals), 14 action outputs (10 base + 4 bond signal emission). Full state: position, energy, structure, repmat, signal, membrane, age, genome_id, facing, bonds, bond strength/signals, last_attacker.
@@ -203,6 +203,12 @@ All parameters in `config.py` — the single source of truth. Key non-obvious va
 | `MIGRATION_INTERVAL` | 200 | Continuous trickle (was 5000); Nm≈1.25 per generation |
 | `MIGRATION_COUNT` | 1 | Per-island per event; uniform random selection (was fitness-proportional) |
 | `ISLAND_ENV_VARIANCE` | 0.3 | ±30% parameter variance; more distinct islands |
+| `WASTE_ENABLED` | True | Metabolic waste from photosynthesis |
+| `WASTE_PRODUCTION_RATE` | 0.01 | Waste per unit energy gained; SS ~0.09 per cell |
+| `WASTE_DECAY_RATE` | 0.002 | Half-life ~350 ticks |
+| `WASTE_DIFFUSION_RATE` | 0.05 | 5% spreads per tick (same as signal) |
+| `WASTE_TOXICITY_THRESHOLD` | 0.5 | **Never reached at current params** — peak 0.17 at density 17 |
+| `WASTE_TOXICITY_RATE` | 0.05 | Membrane damage per tick per unit waste above threshold |
 
 ---
 
@@ -224,7 +230,7 @@ All parameters in `config.py` — the single source of truth. Key non-obvious va
 ### Data Flow
 
 Simulation produces `runs/<timestamp>/` with:
-- `metrics.jsonl` — population, energy, movement, attack, bond, light attenuation stats (every 1k ticks)
+- `metrics.jsonl` — population, energy, movement, attack, bond, light attenuation, zone breakdown, waste stats (every 1k ticks)
 - `oee_metrics.jsonl` — Bedau activity, MODES, entropy, MI, bond density (every 1k ticks)
 - `crn_metrics.jsonl` — CRN-only: zone activations, biases, decays, reactions, zone flow (every 1k ticks)
 - `lineage.jsonl` — parent->child mutation events
@@ -363,6 +369,56 @@ Validate output uses stable dirs (`validate_neural_10000t/`) not timestamped. Co
 - Deposit relocation + attenuation is too aggressive in combination — attenuation alone suffices
 - k=0.5 (plan original) → extinction. k=0.10 → CRN extinction at 50k. k=0.05 → CRN extinction at 35k. k=0.03 → both survive 50k
 
+### Phase 2 Results: Metabolic Waste System (v7.0)
+
+**What changed:** Photosynthesis produces waste proportional to energy gained. Waste diffuses (5%/tick), decays (0.002/tick), and causes membrane damage above threshold 0.5. Added zone population breakdown and waste metrics to metrics.jsonl.
+
+**Critical finding: waste toxicity threshold was never reached.** Peak waste at occupied cells: 0.168 (CRN at 50k, density 17). The steady-state per-cell waste is ~0.09 — even clusters of 20 cells only reach ~0.17. The threshold of 0.5 requires ~55 cells at the same position, which never happens. **Waste has no direct effect on cell survival at current parameters.**
+
+**CRN with waste — 200k ticks:**
+- Population: 1015 → 152 (10k) → 234 (50k) → 213 (100k) → 50 (167k, respawn) → 147 (200k)
+- Movement: 40% initial → **0.0% final** (sessile optimum unbroken)
+- Move bias drifted: +0.30 → +0.097 (evolving away movement)
+- Avg X: 84.6 → 91.0 (stuck in bright zone, 96% bright)
+- Waste at cells: 0.13 (50k, dense) → 0.004 (200k, sparse)
+- MI: 0.0062 (average), up from 0.0039 Phase 1 — **1.6x improvement**
+- NOT-gates: **50.4%** inverted thresholds (significant logic evolution)
+- All 16/16 reactions active, but zone flow: all sensory→sensory (no hidden/action pathways in dominant genome)
+
+**Neural with waste — 200k ticks:**
+- Population: 2000 → 561 (10k) → 418 (50k) → 298 (100k) → 41 (187k, near respawn) → 64 (200k)
+- Movement: 25.5% → **10.9% final** (maintained, not evolved away)
+- Avg X: 85.6 → **158.4** (at bright/dim boundary!)
+- Zone split: **44% bright, 56% dim** — dim-zone colonization evolved
+- Waste at cells: 0.11 (50k) → 0.029 (200k)
+- MI: **0.0148** (average) — **3.8x above Phase 1 baseline**
+- Attack: 0.8% average (predation evolving)
+- Bonding: 8.0% average
+
+**Phase 2 comparison table:**
+
+| Metric | CRN Phase 1 (50k) | CRN+waste (200k avg) | Neural Phase 1 (50k) | Neural+waste (200k avg) |
+|--------|-------------------|---------------------|---------------------|------------------------|
+| Population | 317 | 176 (mean) | 512 | 278 (mean) |
+| Movement | 8.9% | **0.7%** | 25.2% | **23.7%** |
+| MI | 0.0039 | **0.0062** | 0.006 | **0.0148** |
+| Bonding | 13.9% | 5.7% | 15.9% | 8.0% |
+| Attack | 0.0% | 0.0% | 0.65% | **0.8%** |
+| Shannon | 5.70 | 7.20 | 6.13 | 7.82 |
+
+**Key insights:**
+1. **Waste parameters are too mild.** Peak waste 0.17 never reaches 0.5 threshold. Need 3-5x higher production or lower threshold to create actual toxicity pressure.
+2. **Neural evolves dim-zone colonization.** avg X=158, 56% in dim zone — this is new and significant. Cells spread to escape density pressure + waste accumulation in bright zone.
+3. **CRN sessile optimum persists.** Even at 200k with combined pressure, CRN evolves to 0% movement. The CRN substrate cannot discover the "move away from waste" strategy without direct waste sensing.
+4. **Population viability is the binding constraint.** Both genomes barely survive 200k ticks. The carrying capacity with attenuation + waste is too low for sustained evolution. Populations hit respawn thresholds.
+5. **MI continues improving.** Neural MI 0.0148 is the highest ever observed — sensory-action coupling is genuinely evolving. CRN MI 0.0062 also improved over Phase 1.
+
+**Tuning recommendations for v7.1:**
+- Increase WASTE_PRODUCTION_RATE from 0.01 to 0.05 (5x) — brings steady-state to ~0.45/cell, clusters of 2+ hit threshold
+- OR decrease WASTE_TOXICITY_THRESHOLD from 0.5 to 0.15 — current peak of 0.17 would trigger damage
+- Consider reducing LIGHT_ATTENUATION_K from 0.03 to 0.02 to compensate for waste pressure
+- Add waste as CRN sensory input (C7, replacing age) to give CRN cells the ability to evolve waste avoidance
+
 ---
 
 ## 10. Known Issues — Priority Order
@@ -376,22 +432,27 @@ Validate output uses stable dirs (`validate_neural_10000t/`) not timestamped. Co
 | 5 | Selective sweep too fast | Continuous trickle migration (1 cell/200 ticks, uniform random). CRN root diversity 43 vs old 11. |
 | 6 | Predation bifurcation | Kill absorption 0.5→0.12, bonus 2.0→0.0. Ecologically realistic; no predation crashes observed. |
 
-### Partially Fixed in v6.0
+### Partially Fixed in v6.0/v7.0
 | # | Issue | Status |
 |---|-------|--------|
-| 4 | MI near zero | **Improved.** CRN MI 0.0009 → 0.0039 (4.3x). Neural MI 0.0039 → 0.006 (1.5x). Still low but trending up. |
-| 7 | CRN evolves away movement | **Partially fixed.** CRN movement 1.4% → 8.9% (6.4x). Sessile optimum weakened but not fully broken. |
-| 8 | No predation evolves | **Improved.** Neural attack 0.1% → 0.65% (3x) with 35% absorption. Predation emerging but still marginal. |
+| 4 | MI near zero | **Improved in v7.0.** Neural MI avg 0.0148 (3.8x above Phase 1). CRN MI avg 0.0062 (1.6x). Sensory-action coupling genuinely evolving. |
+| 7 | CRN evolves away movement | **Regressed in v7.0.** CRN movement 8.9% → 0.0% at 200k. Waste too mild to affect CRN. Need waste sensing or stronger waste params. |
+| 8 | No predation evolves | **Improved.** Neural attack 0.8% average at 200k. Still marginal but persistent. |
+
+### Fixed in v7.0
+| # | Issue | Fix Applied |
+|---|-------|-------------|
+| 12 | compare_runs.py swaps labels | Auto-detect genome type from crn_metrics.jsonl presence. |
 
 ### Remaining Issues
 | # | Issue | Root Cause | Fix Direction |
 |---|-------|------------|---------------|
-| 7b | CRN movement still low (8.9%) | k=0.03 is gentle; cells cluster to density 16 and tolerate the light reduction. Movement evolves up but doesn't dominate. | Phase 2: metabolic waste (local toxicity from photosynthesis) or seasonal light to make staying in one spot actively harmful |
-| 8b | Predation still marginal | Even at 35% absorption, resources are abundant enough that predation is a poor strategy vs photosynthesis. | Need scarcity events or predation-specific advantages (speed, armor) |
-| 9 | Bond signals unused | CRN maps only 8 actions; bond signal outputs (10-13) are zeroed. Neural has signals but no evolutionary pressure to use them. | Needs functional multicellularity pressure first |
-| 10 | CRN crn_metrics logger partial | Zone means and biases show as 0 in analysis trajectory extraction (raw JSONL data is correct). | Fix key mapping in metrics extraction code |
-| 11 | CRN sensitive to k value | CRN carrying capacity drops sharply with k (cohort die-offs at low pop). k≥0.05 causes extinction at 50k. | Consider adding age jitter to prevent synchronized die-offs, or use CRN-specific k |
-| 12 | compare_runs.py swaps labels | Script labels first arg as "Neural" and second as "CRN" regardless of actual genome type. | Detect genome type from presence of crn_metrics.jsonl |
+| 7c | CRN movement 0% at 200k | Waste threshold (0.5) never reached — peak 0.17. CRN has no waste sensing input. | Increase WASTE_PRODUCTION_RATE 5x, or add waste as CRN sensory input, or lower threshold to 0.15 |
+| 8b | Predation still marginal | Resources still abundant enough that predation is poor vs photosynthesis | Need scarcity events or predation-specific advantages |
+| 9 | Bond signals unused | CRN maps only 8 actions; bond signal outputs (10-13) are zeroed | Needs functional multicellularity pressure first |
+| 10 | CRN crn_metrics logger partial | Zone means and biases show as 0 in analysis trajectory extraction | Fix key mapping in metrics extraction code |
+| 11 | Population viability at 200k | Both genomes barely survive 200k ticks with attenuation+waste. Carrying capacity too low. | Reduce LIGHT_ATTENUATION_K to 0.02, or increase PHOTOSYNTHESIS_RATE |
+| 13 | Waste params too mild | Steady-state waste ~0.09/cell, peak 0.17 at density 17. Threshold 0.5 never reached. | WASTE_PRODUCTION_RATE 0.01→0.05, or threshold 0.5→0.15 |
 
 ---
 
@@ -479,12 +540,12 @@ Every subsystem must be testable in isolation: conservation laws, determinism, b
 
 ## Summary for Claude Code
 
-1. v6.0: Beer-Lambert light attenuation implemented. CRN movement 6.4x increase, MI 4.3x increase. Sessile optimum partially broken.
+1. v7.0: Metabolic waste system implemented. Waste params too mild (threshold never reached). Neural evolved dim-zone colonization (56% dim, avg X=158). CRN sessile optimum unbroken at 200k.
 2. CRN is the primary genome for pushing complexity. Neural is the comparison baseline — never delete it.
-3. **Immediate priority:** Phase 2 interventions to fully break the sessile optimum. CRN movement at 8.9% is better but not enough for active foraging. Options: metabolic waste system (local toxicity), seasonal light variation, or size-dependent predation resistance.
-4. **Secondary priority:** Run both genomes to 200k+ ticks with current settings to see if complexity continues increasing. MI and bonding trends are positive.
-5. **Caution:** k=0.03 is the sweet spot for both genomes. Do NOT increase k above 0.05 — CRN goes extinct due to cohort die-offs at low carrying capacity. Do NOT combine fast deposit relocation with attenuation — the combined pressure is too harsh.
+3. **Immediate priority:** Tune waste parameters. Current WASTE_PRODUCTION_RATE=0.01 is too low — peak waste 0.17 vs threshold 0.5. Either increase production 5x to 0.05, or lower threshold to 0.15. Also consider adding waste as CRN sensory input (replacing age on C7) since CRN cannot "see" waste to evolve avoidance.
+4. **Secondary priority:** Address population viability. Both genomes barely survive 200k with attenuation+waste. Consider reducing k from 0.03 to 0.02 once waste is tuned up, to avoid double-crushing populations.
+5. **Caution:** k=0.03 + current waste already causes near-extinction at 200k. Any waste increase MUST be accompanied by reduced attenuation or increased photosynthesis to maintain viability.
 6. Keep modules under 300 lines.
-7. Run `python validate.py --ticks 30000` after changes. Run `python analysis/run_all.py` for full analysis.
+7. Run `PYTHONPATH=. python validate.py --ticks 30000` after changes. Run `PYTHONPATH=. python analysis/run_all.py` for full analysis.
 8. Config values in `config.py` are the source of truth — this document may lag behind.
 9. Design question: "Does this create pressure for complex behavior, or can a simple strategy still win?"
