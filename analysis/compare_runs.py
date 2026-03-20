@@ -61,6 +61,55 @@ def extract_series(metrics: list[dict], key: str) -> tuple[np.ndarray, np.ndarra
     return ticks, vals
 
 
+def _load_crn_metrics(path: str) -> list[dict]:
+    """Load crn_metrics.jsonl from a file path."""
+    if not os.path.exists(path):
+        return []
+    with open(path) as f:
+        return [json.loads(line) for line in f if line.strip()]
+
+
+def _plot_crn_comparison(path_a: str | None, path_b: str, output_dir: str):
+    """Generate CRN-specific comparison figure (2x3)."""
+    recs_a = _load_crn_metrics(path_a) if path_a else []
+    recs_b = _load_crn_metrics(path_b)
+    if not recs_a and not recs_b:
+        return
+
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+    fig.suptitle("CRN Genome Comparison", fontsize=14, fontweight="bold")
+
+    panels = [
+        ("hidden_mean", "Hidden Zone Activation"),
+        (lambda r: r["bias_mean"][0], "Eat Bias"),
+        ("active_reactions", "Active Reactions"),
+        ("inverted_threshold_frac", "Inverted Thresholds"),
+        (lambda r: r["bias_mean"][1], "Move Bias"),
+        (lambda r: r["bias_mean"][3], "Attack Bias"),
+    ]
+
+    for idx, (key, title) in enumerate(panels):
+        ax = axes[idx // 3, idx % 3]
+        for recs, color, label in [(recs_a, "b", "Run A"), (recs_b, "r", "Run B")]:
+            if not recs:
+                continue
+            ticks = np.array([r["tick"] for r in recs])
+            if callable(key):
+                vals = np.array([key(r) for r in recs])
+            else:
+                vals = np.array([r[key] for r in recs])
+            ax.plot(ticks, vals, f"{color}-", linewidth=0.8, alpha=0.8,
+                    label=label)
+        ax.set_title(title)
+        ax.set_xlabel("Tick")
+        ax.legend(fontsize=8)
+        ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, "comparison_crn.png"), dpi=150)
+    plt.close()
+
+
 def plot_comparison(neural_dir: str, crn_dir: str, output_dir: str):
     """Generate comprehensive comparison plots."""
     os.makedirs(output_dir, exist_ok=True)
@@ -195,6 +244,15 @@ def plot_comparison(neural_dir: str, crn_dir: str, output_dir: str):
         plt.savefig(os.path.join(output_dir, "comparison_oee.png"), dpi=150)
         plt.close()
 
+    # ── Figure 3: CRN comparison (if both have CRN metrics) ──
+    n_crn_path = os.path.join(neural_dir, "crn_metrics.jsonl")
+    c_crn_path = os.path.join(crn_dir, "crn_metrics.jsonl")
+    if os.path.exists(n_crn_path) and os.path.exists(c_crn_path):
+        _plot_crn_comparison(n_crn_path, c_crn_path, output_dir)
+    elif os.path.exists(c_crn_path):
+        # Only one CRN run — still useful to show
+        _plot_crn_comparison(None, c_crn_path, output_dir)
+
     # ── Summary report ──
     report_lines = ["# Neural vs CRN Comparison Report\n"]
 
@@ -269,9 +327,10 @@ if __name__ == "__main__":
         print("   or: python analysis/compare_runs.py --latest")
         sys.exit(1)
 
-    import time
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    output_dir = os.path.join("analysis", "output", f"comparison_{timestamp}")
+    name_a = os.path.basename(dirs[0].rstrip("/\\"))
+    name_b = os.path.basename(dirs[1].rstrip("/\\"))
+    output_dir = os.path.join("analysis", "output",
+                              f"comparison_{name_a}_vs_{name_b}")
 
     print(f"Comparing:\n  {dirs[0]}\n  {dirs[1]}")
     report = plot_comparison(dirs[0], dirs[1], output_dir)

@@ -9,12 +9,12 @@ from config import (
     EAT_ABSORB_CAP, S_ENERGY_VALUE, R_ENERGY_VALUE,
     ATTACK_MEMBRANE_DAMAGE, DIVIDE_COST, DIVIDE_R_COST,
     PARENT_RESOURCE_SHARE, DAUGHTER_RESOURCE_SHARE, MEMBRANE_INITIAL,
-    BOND_SIGNAL_CHANNELS,
+    BOND_SIGNAL_CHANNELS, BOND_INITIAL_STRENGTH,
 )
 from cell.cell_state import (
     cell_alive, cell_x, cell_y, cell_energy, cell_structure, cell_repmat,
     cell_signal, cell_membrane, cell_age, cell_genome_id, cell_facing,
-    cell_bonds, cell_bond_signal_out, cell_last_attacker, grid_cell_id,
+    cell_bonds, cell_bond_strength, cell_bond_signal_out, cell_last_attacker, grid_cell_id,
     cell_count, free_slots, free_slot_count,
 )
 from cell.genome import action_outputs, needs_mutation
@@ -276,6 +276,22 @@ def process_divide_phase2():
 
                     grid_cell_id[tx, ty] = daughter
                     needs_mutation[daughter] = 1
+
+                    # Auto-bond parent and daughter (incomplete cytokinesis)
+                    # Clear daughter bonds first (slot may have stale data)
+                    for b in range(4):
+                        cell_bonds[daughter, b] = -1
+                        cell_bond_strength[daughter, b] = 0.0
+                    for b in range(4):
+                        if cell_bonds[i, b] < 0:  # empty parent slot
+                            for b2 in range(4):
+                                if cell_bonds[daughter, b2] < 0:  # empty daughter slot
+                                    cell_bonds[i, b] = daughter
+                                    cell_bonds[daughter, b2] = i
+                                    cell_bond_strength[i, b] = 0.1
+                                    cell_bond_strength[daughter, b2] = 0.1
+                                    break
+                            break
 
                     ti.atomic_add(cell_count[None], 1)
                 else:

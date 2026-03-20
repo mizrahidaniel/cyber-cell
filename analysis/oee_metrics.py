@@ -120,8 +120,20 @@ class OEEMetrics:
             change = (len(new_genomes) + len(lost_genomes)) / max(1, len(curr_genomes | prev_genomes))
             novelty = len(new_genomes) / max(1, len(curr_genomes))
 
-        # Complexity: number of unique genomes (proxy)
-        complexity = float(len(unique))
+        # Complexity proxy: active reactions for CRN, unique genomes for neural
+        from config import GENOME_TYPE
+        if GENOME_TYPE == "crn":
+            from cell.crn_genome import crn_weights
+            from config import MAX_REACTIONS, CRN_PARAMS_PER_REACTION
+            w = crn_weights.to_numpy()
+            active_total = 0
+            for gid in unique:
+                active_total += sum(
+                    1 for r in range(MAX_REACTIONS)
+                    if abs(w[int(gid), r * CRN_PARAMS_PER_REACTION + 5]) > 0.001)
+            complexity = float(active_total / max(1, len(unique)))
+        else:
+            complexity = float(len(unique))
 
         # Ecology: evenness of genome distribution (1 = perfectly even)
         counts = np.array(list(freq.values()), dtype=np.float64)

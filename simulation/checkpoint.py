@@ -2,7 +2,10 @@
 
 import numpy as np
 
-from config import MAX_CELLS, MAX_GENOMES, GENOME_SIZE, GRID_WIDTH, GRID_HEIGHT, NUM_DEPOSITS_S, NUM_DEPOSITS_R
+from config import (
+    MAX_CELLS, MAX_GENOMES, GENOME_SIZE, GRID_WIDTH, GRID_HEIGHT,
+    NUM_DEPOSITS_S, NUM_DEPOSITS_R, GENOME_TYPE,
+)
 
 from cell.cell_state import (
     cell_alive, cell_x, cell_y, cell_energy, cell_structure, cell_repmat,
@@ -22,9 +25,7 @@ from world.chemistry import (
 
 def save_checkpoint(path: str, tick: int, current_buffer: int, mutation_rng_state):
     """Save all simulation state to a .npz file."""
-    np.savez_compressed(
-        path,
-        # Metadata
+    data = dict(
         tick=tick,
         current_buffer=current_buffer,
         mutation_rng_state=mutation_rng_state,
@@ -68,6 +69,12 @@ def save_checkpoint(path: str, tick: int, current_buffer: int, mutation_rng_stat
         deposit_R_x=deposit_R_x.to_numpy(),
         deposit_R_y=deposit_R_y.to_numpy(),
     )
+    # CRN state (only if CRN genome is active)
+    if GENOME_TYPE == "crn":
+        from cell.crn_genome import crn_weights, crn_chemicals
+        data["crn_weights"] = crn_weights.to_numpy()
+        data["crn_chemicals"] = crn_chemicals.to_numpy()
+    np.savez_compressed(path, **data)
 
 
 def load_checkpoint(path: str) -> dict:
@@ -120,6 +127,27 @@ def load_checkpoint(path: str) -> dict:
     deposit_S_y.from_numpy(data["deposit_S_y"])
     deposit_R_x.from_numpy(data["deposit_R_x"])
     deposit_R_y.from_numpy(data["deposit_R_y"])
+
+    # CRN state (if present in checkpoint)
+    if "crn_weights" in data:
+        from cell.crn_genome import crn_weights, crn_chemicals
+        from config import CRN_GENOME_SIZE, NUM_INTERNAL_CHEMICALS
+        saved_w = data["crn_weights"]
+        if saved_w.shape[1] < CRN_GENOME_SIZE:
+            padded = np.zeros((MAX_GENOMES, CRN_GENOME_SIZE), dtype=np.float32)
+            padded[:, :saved_w.shape[1]] = saved_w
+            crn_weights.from_numpy(padded)
+        else:
+            crn_weights.from_numpy(saved_w)
+        if "crn_chemicals" in data:
+            saved_c = data["crn_chemicals"]
+            if saved_c.shape[1] < NUM_INTERNAL_CHEMICALS:
+                padded = np.zeros((MAX_CELLS, NUM_INTERNAL_CHEMICALS),
+                                  dtype=np.float32)
+                padded[:, :saved_c.shape[1]] = saved_c
+                crn_chemicals.from_numpy(padded)
+            else:
+                crn_chemicals.from_numpy(saved_c)
 
     return {
         "tick": int(data["tick"]),

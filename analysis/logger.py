@@ -9,12 +9,24 @@ import numpy as np
 from analysis.metrics import (
     get_population_stats, get_genome_diversity, get_movement_stats,
     get_predation_stats, get_spatial_snapshot, get_genome_weight_snapshot,
-    get_burst_spatial_snapshot,
+    get_burst_spatial_snapshot, get_crn_snapshot,
 )
 from config import (
     SPATIAL_SNAPSHOT_INTERVAL, BURST_SNAPSHOT_INTERVAL,
     BURST_SNAPSHOT_LENGTH, GENOME_WEIGHT_SNAPSHOT_INTERVAL,
+    GENOME_TYPE,
 )
+
+
+def _np_serializer(obj):
+    """JSON serializer for numpy types."""
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    raise TypeError(f"Not JSON serializable: {type(obj)}")
 
 
 class SimulationLogger:
@@ -39,6 +51,12 @@ class SimulationLogger:
         self.oee_path = os.path.join(self.log_dir, "oee_metrics.jsonl")
         self._oee_file = open(self.oee_path, "w")
 
+        # CRN metrics
+        self._crn_file = None
+        if GENOME_TYPE == "crn":
+            self.crn_path = os.path.join(self.log_dir, "crn_metrics.jsonl")
+            self._crn_file = open(self.crn_path, "w")
+
         # Burst snapshot state machine
         self._burst_active = False
         self._burst_start_tick = -1
@@ -62,6 +80,15 @@ class SimulationLogger:
 
         self._file.write(json.dumps(record) + "\n")
         self._file.flush()
+
+        # CRN metrics
+        if self._crn_file is not None:
+            crn_snap = get_crn_snapshot()
+            if crn_snap is not None:
+                crn_snap["tick"] = tick
+                self._crn_file.write(
+                    json.dumps(crn_snap, default=_np_serializer) + "\n")
+                self._crn_file.flush()
 
         # Save spatial snapshot at lower frequency
         if tick % SPATIAL_SNAPSHOT_INTERVAL == 0:
@@ -125,3 +152,5 @@ class SimulationLogger:
         self._file.close()
         self._lineage_file.close()
         self._oee_file.close()
+        if self._crn_file is not None:
+            self._crn_file.close()

@@ -4,7 +4,7 @@ import taichi as ti
 
 from config import (
     GRID_WIDTH, GRID_HEIGHT, GUI_SCALE, MAX_CELLS, DAY_LENGTH,
-    ACTION_THRESHOLD,
+    ACTION_THRESHOLD, ARCHIPELAGO_ENABLED,
 )
 from cell.cell_state import (
     cell_alive, cell_x, cell_y, cell_energy, cell_genome_id,
@@ -128,6 +128,20 @@ def render_membrane_overlay():
             display[i, j] = ti.math.vec3(light, light, light * 0.8)
 
 
+@ti.kernel
+def render_quadrant_boundaries():
+    """Draw dashed lines at quadrant boundaries."""
+    mid_x = GRID_WIDTH // 2
+    mid_y = GRID_HEIGHT // 2
+    line_color = ti.math.vec3(0.0, 0.8, 0.8)  # cyan
+    for j in range(GRID_HEIGHT):
+        if j % 4 < 2:  # dashed
+            display[mid_x, j] = line_color
+    for i in range(GRID_WIDTH):
+        if i % 4 < 2:
+            display[i, mid_y] = line_color
+
+
 class Renderer:
     # Ticks per frame for each speed level (index 0 = normal)
     SPEED_LEVELS = [1, 2, 5, 10, 25, 50]
@@ -179,6 +193,9 @@ class Renderer:
             render_chemical_overlay(env_G, 2)
         elif self.overlay_mode == 4:
             render_membrane_overlay()
+
+        if ARCHIPELAGO_ENABLED:
+            render_quadrant_boundaries()
 
         self.gui.set_image(display)
 

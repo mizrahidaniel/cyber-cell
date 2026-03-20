@@ -84,9 +84,22 @@ def respawn_cells(count: int = RESPAWN_COUNT):
 
         # Initialize genome with random weights
         if GENOME_TYPE == "crn":
-            from cell.crn_genome import crn_weights, CRN_GENOME_SIZE
-            for w in range(CRN_GENOME_SIZE):
+            from cell.crn_genome import crn_weights, crn_chemicals
+            from config import (CRN_GENOME_SIZE, CRN_EXTRA_PARAMS,
+                                NUM_INTERNAL_CHEMICALS, NUM_ACTION_CHEMICALS)
+            react_end = CRN_GENOME_SIZE - CRN_EXTRA_PARAMS
+            for w in range(react_end):
                 crn_weights[gid, w] = float(_respawn_rng.uniform(-0.5, 0.5))
+            for a, bias in enumerate([0.3, 0.1, 0.2, -0.3]):
+                crn_weights[gid, react_end + a] = float(
+                    bias + _respawn_rng.normal(0, 0.05))
+            for h in range(CRN_EXTRA_PARAMS - NUM_ACTION_CHEMICALS):
+                crn_weights[gid, react_end + NUM_ACTION_CHEMICALS + h] = float(
+                    0.05 + abs(_respawn_rng.normal(0, 0.01)))
+            for c in range(NUM_INTERNAL_CHEMICALS):
+                crn_chemicals[slot, c] = 0.0
+            for a in range(NUM_ACTION_CHEMICALS):
+                crn_chemicals[slot, 12 + a] = crn_weights[gid, react_end + a]
         else:
             from config import GENOME_SIZE, SEED_WEIGHT_SIGMA
             for w in range(GENOME_SIZE):

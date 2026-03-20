@@ -44,9 +44,9 @@ DEPOSIT_RELOCATE_FRACTION = 0.2   # fraction of deposits relocated each interval
 # =============================================================================
 ARCHIPELAGO_ENABLED = True
 NUM_ISLANDS = 4               # 2x2 quadrant grid on the 500x500 world
-MIGRATION_INTERVAL = 5000     # ticks between migration events
-MIGRATION_COUNT = 10          # cells migrated per island per event
-ISLAND_ENV_VARIANCE = 0.2     # ±20% parameter variance between quadrants
+MIGRATION_INTERVAL = 200      # ticks between migration events (continuous trickle)
+MIGRATION_COUNT = 1           # cells migrated per island per event
+ISLAND_ENV_VARIANCE = 0.3     # ±30% parameter variance between quadrants
 ISLAND_BOUNDARY_DIFFUSION = 0.002  # diffusion rate across quadrant boundaries (<<normal)
 
 # =============================================================================
@@ -96,8 +96,8 @@ R_ENERGY_VALUE = 0.5
 EAT_ABSORB_CAP = 2.0          # max chemical absorbed per eat action per tick
 PASSIVE_EAT_CAP = 0.05        # max chemical absorbed passively per tick (no neural net)
 ATTACK_MEMBRANE_DAMAGE = 8.0
-KILL_ABSORPTION_RATE = 0.5        # fraction of victim's chemicals absorbed by killer
-KILL_ENERGY_BONUS = 2.0           # flat energy bonus on kill (conservative start)
+KILL_ABSORPTION_RATE = 0.12       # fraction of victim's chemicals absorbed by killer (~10-15% ecological realism)
+KILL_ENERGY_BONUS = 0.0           # no flat bonus — predation profit comes from absorption only
 
 # =============================================================================
 # Genome / Neural Network
@@ -145,7 +145,7 @@ DAUGHTER_RESOURCE_SHARE = 0.4
 # =============================================================================
 BOND_SHARE_RATE = 0.1
 BOND_INITIAL_STRENGTH = 0.5      # starting strength on bond formation
-BOND_DECAY_RATE = 0.02           # strength lost per tick without reinforcement
+BOND_DECAY_RATE = 0.001          # strength lost per tick without reinforcement (bonds last >500 ticks)
 BOND_REINFORCE_RATE = 0.03       # strength gained per tick when both cells fire bond
 BOND_BREAK_THRESHOLD = 0.05      # auto-break below this strength
 BOND_TRANSFER_LOSS = 0.3         # fraction of shared resources destroyed in transit
@@ -160,17 +160,25 @@ GENOME_TYPE = "neural"           # "neural" or "crn"
 # =============================================================================
 # CRN Genome (Chemical Reaction Network)
 # =============================================================================
-NUM_INTERNAL_CHEMICALS = 8
+NUM_INTERNAL_CHEMICALS = 16      # 8 sensory + 4 hidden + 4 action
+NUM_SENSORY_CHEMICALS = 8        # chemicals 0-7: written by environment
+NUM_HIDDEN_CHEMICALS = 4         # chemicals 8-11: internal memory/gates
+NUM_ACTION_CHEMICALS = 4         # chemicals 12-15: reset each tick, drive actions
 MAX_REACTIONS = 16
-# Per reaction: input_a, input_b, output, threshold_a, threshold_b, rate, decay
 CRN_PARAMS_PER_REACTION = 7
-CRN_GENOME_SIZE = MAX_REACTIONS * CRN_PARAMS_PER_REACTION  # 112
+CRN_EXTRA_PARAMS = 8             # 4 action biases + 4 hidden decay rates
+CRN_GENOME_SIZE = MAX_REACTIONS * CRN_PARAMS_PER_REACTION + CRN_EXTRA_PARAMS  # 120
 CRN_MUTATION_RATE_PERTURB = 0.02
 CRN_MUTATION_SIGMA = 0.1
 CRN_MUTATION_RATE_DUPLICATE = 0.005
 CRN_MUTATION_RATE_DELETE = 0.005
 CRN_MUTATION_RATE_REWIRE = 0.01
-CRN_ACTION_THRESHOLD = 0.25
+CRN_ACTION_GAIN = 30.0           # sigmoid steepness for CRN action firing
+CRN_ACTION_CENTER = 0.5          # sigmoid midpoint for CRN action firing
+CRN_SENSORY_BLEND = 0.5          # environment weight in sensory blend
+CRN_HIDDEN_DECAY = 0.02          # default per-tick decay for hidden chemicals
+CRN_HIDDEN_BASAL = 0.005         # basal production rate for hidden chemicals (steady-state 0.25, below aux threshold)
+CRN_GRADIENT_TURN_MIN = 0.15     # min gradient magnitude for turns
 
 # =============================================================================
 # Visualization

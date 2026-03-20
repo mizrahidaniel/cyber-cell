@@ -619,12 +619,17 @@ def find_latest_run_with_spatial(runs_dir="runs"):
 
 
 def main():
-    runs_dir = "runs"
-    if len(sys.argv) > 1:
-        runs_dir = sys.argv[1]
+    arg = sys.argv[1] if len(sys.argv) > 1 else "runs"
 
-    run_dir, snapshots = find_latest_run_with_spatial(runs_dir)
-    if not run_dir:
+    # If arg points directly to a run dir (has spatial/ inside), use it
+    spatial_dir = os.path.join(arg, "spatial")
+    if os.path.isdir(spatial_dir):
+        run_dir = arg
+        snapshots = sorted(glob.glob(os.path.join(spatial_dir, "spatial_*.npz")))
+    else:
+        run_dir, snapshots = find_latest_run_with_spatial(arg)
+
+    if not run_dir or not snapshots:
         print("No runs with spatial data found.")
         return
 

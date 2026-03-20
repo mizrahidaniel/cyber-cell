@@ -1,163 +1,87 @@
-# CyberCell: Evolutionary Intelligence Simulation — Project Brief for Claude Code
+# CyberCell: Evolutionary Intelligence Simulation — Project Brief
 
-## How to Use This Document
-
-This is the master project brief for CyberCell, an artificial life simulation designed to evolve intelligence from the bottom up. It contains everything you need to plan, architect, and implement this system.
-
-Read this entire document before writing any code. The design decisions are interdependent — the chemistry affects the energy model, which affects cell viability, which affects whether evolution produces anything interesting. Understand the whole system first.
-
-**Document version:** v3.0 — Steps 8-14 (research-informed upgrades) are implemented and validated on the `feature/research-upgrades` branch. This revision documents the current state of all systems, including bond dynamics, gradient noise, archipelago, enhanced predation, CRN genome, environment API, and OEE metrics.
+**Document version:** v5.0 — Six critical issues fixed (v4.0 issues 1-6). CRN sigmoid action firing, per-reaction decay bug fix, hidden zone basal production, auto-bonds at division, ecological predation economics, continuous migration trickle. CRN population now 3x neural. Empirical findings from 50k-tick comparative runs documented.
 
 ---
 
 ## 1. Vision and Goal
 
-We are building a simulated world where simple cyber-cells — minimal digital organisms — evolve through natural selection in a rich environment. The cells start with no intelligence. Through mutation, reproduction, death, and environmental pressure, we aim to see the emergence of increasingly complex behaviors: chemotaxis, predation, multicellularity, nervous system analogs, and eventually something recognizable as flexible, general-purpose problem-solving.
+We are building a simulated world where simple cyber-cells evolve through natural selection. The cells start with no intelligence. Through mutation, reproduction, death, and environmental pressure, we aim to see the emergence of increasingly complex behaviors.
 
-This is NOT a game, NOT a traditional genetic algorithm, and NOT a neural network training system. It is a bottom-up evolutionary simulation where intelligence (if it arises) is a byproduct of survival pressure, not an engineered outcome.
+**The primary goal is to sustain open-ended evolution of increasing complexity.** Every known ALife system eventually plateaus. Our goal is to push past the complexity barrier by combining:
 
-### Reframed Goal (Post-Research)
-
-The primary goal is not "evolve intelligence" — it is **sustain open-ended evolution of increasing complexity.** The research is unambiguous: every known ALife system eventually plateaus (the "complexity barrier"). No artificial system has achieved transformational open-endedness — where the rules of evolution themselves evolve, producing qualitatively new kinds of entities. Our goal is to push as far past the complexity barrier as possible by combining insights from the ALife literature:
-
-- **Quality-diversity algorithms** (MAP-Elites, minimal-criterion selection) to maintain genetic variation.
-- **Ecological dynamics** (arms races, niche construction, co-evolution) as the primary driver.
-- **Hybrid computational substrates** (gene regulatory networks + neural circuits) for richer evolvability.
-- **LLM-guided environment design** to keep selection pressure calibrated to organism capability.
-
-Intelligence, if it emerges, will be a side effect of sustained complexification — not a direct optimization target.
+- **Quality-diversity algorithms** (archipelago, migration) to maintain genetic variation.
+- **Ecological dynamics** (arms races, niche construction) as the primary driver.
+- **Hybrid computational substrates** (CRN + neural network genomes) for richer evolvability.
+- **LLM-guided environment design** (future) to keep selection pressure calibrated.
 
 ### Key Theoretical Framing
 
-When bonded cell clusters communicate through bond signal channels, the multicellular organism is functionally a **dynamic graph neural network (GNN)**: cells are nodes with local computation, bonds are edges carrying messages, and the graph topology itself is evolved. This is a distinct computational architecture from a single monolithic network — it offers modularity (mutations to one cell don't break others), forced abstraction (narrow bond channels require information compression), and distributed sensing (50 cells sense 50 locations simultaneously). Whether this compositional architecture has genuine advantages over a single large network is an open empirical question that this project can help answer.
+When bonded cell clusters communicate through bond signal channels, the multicellular organism is functionally a **dynamic graph neural network (GNN)**: cells are nodes with local computation, bonds are edges carrying messages, and the graph topology itself is evolved.
 
-**Core philosophical principles that must guide every implementation decision:**
+### Core Principles
 
-1. **No intelligence in the rules.** The simulation physics must be simple and dumb. If you find yourself encoding clever behavior into the substrate, stop. The rules are a substrate, not a solution.
-2. **Compositionality over complexity.** Simple pieces combining into novel structures. The genome encoding must allow open-ended growth in program complexity.
-3. **The environment does the teaching.** Selection pressure is the optimizer. The environment must be rich enough and varied enough that organisms face a continuous stream of novel problems.
-4. **Death is non-negotiable.** Without death, there is no selection. Every cell must have finite energy, finite lifespan, and real consequences for failure.
-5. **Emergent properties must be emergent.** Never hard-code high-level behaviors. Provide primitives rich enough that complex behaviors could arise through composition.
-6. **Diversity is the fuel.** (NEW) Without maintained diversity, evolution converges to a single dominant strategy and stops innovating. Mechanisms that protect variation are not optional — they are as essential as selection itself.
+1. **No intelligence in the rules.** Simulation physics must be simple. The rules are a substrate, not a solution.
+2. **Compositionality over complexity.** Simple pieces combining into novel structures.
+3. **The environment does the teaching.** Selection pressure is the optimizer.
+4. **Death is non-negotiable.** Every cell must have finite energy, finite lifespan, and real consequences for failure.
+5. **Emergent properties must be emergent.** Never hard-code high-level behaviors.
+6. **Diversity is the fuel.** Without maintained diversity, evolution converges and stops innovating.
 
 ---
 
-## 2. Development Environment and Constraints
+## 2. Development Environment
 
-### Current Setup (Primary)
-- **Machine:** Windows desktop with NVIDIA RTX 5080 (16GB GDDR7, 10,752 CUDA cores, 960 GB/s bandwidth)
-- **Language:** Python 3.11+
-- **Framework:** Taichi Lang (`pip install taichi`)
-- **GPU Backend:** CUDA (`ti.init(arch=ti.cuda)`)
-- **Visualization:** Taichi built-in GUI (`ti.GUI` or `ti.ui.Window`)
-- **No network access required for the simulation itself**
+- **Primary:** Windows desktop, NVIDIA RTX 5080, Python 3.11+, Taichi Lang (CUDA backend)
+- **Secondary:** MacBook with Apple Silicon (Metal backend)
+- **Rule:** All code must work on both by changing only `ti.init()` backend.
 
-### Secondary Setup
-- **Machine:** MacBook with Apple Silicon (M-series chip)
-- **GPU Backend:** Metal (`ti.init(arch=ti.metal)`)
-- **Potential migration:** Rust + wgpu compute shaders for maximum performance (Phase 3)
+### Critical Rules
 
-### Critical Cross-Platform Rules
-All code must work identically on both Mac (Metal) and Windows (CUDA) by changing only the `ti.init()` backend. Specifically:
-
-- **Never use NumPy in any hot loop.** All simulation data must live in Taichi fields and be processed in Taichi kernels. NumPy is acceptable only for one-time initialization and offline analysis.
-- **Never use Python-level loops over cells or grid positions.** Everything must be parallelized in `@ti.kernel` functions from the start, even if parallelism doesn't matter at small scale.
-- **Separate simulation core from visualization completely.** The simulation must be runnable headless (no GUI) for long overnight evolution runs. Visualization is an optional overlay.
-- **Use Taichi fields for all persistent state.** No Python lists, dicts, or objects in the simulation loop.
+- **Never use NumPy in hot loops.** All simulation data in Taichi fields, processed in `@ti.kernel` functions.
+- **Never use Python-level loops over cells.** Everything parallelized from the start.
+- **Separate simulation from visualization.** Must run headless for overnight evolution runs.
 
 ---
 
 ## 3. Current Implementation Status
 
-All systems below are built, working, and validated (200k-tick runs on CUDA).
+All systems built, working, and validated on CUDA.
 
-### 3.1 World — COMPLETE
+### World
+500x500 toroidal grid. Three light zones (bright/dim/dark). Day/night cycle (period 1000 ticks). Patchy resource deposits (radius 10, 20% relocate every 25k ticks). Archipelago: 4 soft-wall quadrants with +/-30% parameter variance, uniform-random migration (1 cell every 200 ticks — continuous trickle matching Wright's Nm≈1 rule).
 
-- **2D grid**, 500 × 500, toroidal wrapping.
-- **Three zones**: Light (left third, intensity 1.0), Dim (middle third, intensity 0.3), Dark (right third, intensity 0.0).
-- **Day/night cycle:** Sinusoidal global light multiplier, period 1000 ticks.
-- **Patchy resources** (Step 9b): Tight deposit clusters (radius 10, amount 10.0). 20% of deposits relocate every 25,000 ticks, forcing cells to navigate.
-- **Archipelago** (Step 10): Soft-wall quadrant partitioning — 4 semi-isolated 250×250 islands with ±20% parameter variance. Reduced diffusion at boundaries. Periodic fitness-proportional migration (10 cells every 5,000 ticks).
+### Chemistry
+4 chemicals: Energy (E), Structure (S), Replication Material (R), Signal (G). Double-buffered diffusion. Gradient noise (sigma=0.15) on all 6 gradient sensing channels.
 
-### 3.2 Chemistry — COMPLETE
+### CyberCell
+34 sensory inputs (18 base + 16 bond signals), 14 action outputs (10 base + 4 bond signal emission). Full state: position, energy, structure, repmat, signal, membrane, age, genome_id, facing, bonds, bond strength/signals, last_attacker.
 
-4 chemicals: Energy (E), Structure (S), Replication Material (R), Signal (G).
-- S and R present as environmental deposits, clustered, slowly replenishing.
-- G produced only by cells, diffuses and decays.
-- E internal only, produced by photosynthesis.
-- Diffusion is double-buffered on the 500×500 grid.
-- **Gradient noise** (Step 9a): All 6 gradient sensing channels (S, R, G × x,y) receive additive Gaussian noise (σ=0.15). Single cells misjudge direction; clusters can average readings.
+### Genome — Two Types
 
-### 3.3 CyberCell — COMPLETE
+**Neural Network (`GENOME_TYPE = "neural"`, default):**
+Feedforward 34->32->32->14. 2,638 parameters. Mutation: perturbation (0.03), reset (0.001), knockout (0.0005).
 
-34 sensory inputs, 14 action outputs (expanded from 18/10 in Step 8c). Cells occupy single grid positions. Full state tracking (position, energy, structure, replication material, signal, membrane integrity, age, genome_id, facing, alive flag, bond slots, bond strength, bond signals, last_attacker).
+**Chemical Reaction Network (`GENOME_TYPE = "crn"`):**
+16 internal chemicals in 3 zones, 16 reaction rules. 120 parameters (112 reaction + 4 action biases + 4 hidden decays). See Section 5 for architecture details.
 
-**Sensory inputs:**
-- [0..17]: Original 18 channels (light, internal state, gradients, neighbors, prey_energy, prey_membrane)
-- [18..33]: Bond signal channels (4 bonds × 4 signal channels each) — Step 8c
+### Energy Model
+Photosynthesis, chemical consumption, predation with ecological kill rewards (12% absorption, no flat bonus). Full cost table in `config.py`. Death from starvation, membrane failure, old age.
 
-**Action outputs:**
-- [0..9]: Original 10 actions (move, turn_l, turn_r, eat, signal, divide, bond, unbond, attack, repair)
-- [10..13]: Bond signal emission (4 channels) — Step 8c
+### Bonding
+Near-permanent bonds (decay 0.001/tick, reinforced at 0.03 when both cells fire bond). Auto-bond at division (incomplete cytokinesis, initial strength 0.1 — breaks in ~50 ticks unless reinforced). 30% lossy resource transfer. 4-channel bond signals per direction. Clusters up to 22 cells with mesh/chain/star topologies; 94% facing coordination in 3+ cell clusters.
 
-### 3.4 Genome — COMPLETE (Two Genome Types)
+### Visualization
+Grid rendering, species coloring, chemical heatmaps, light overlay, stats display.
 
-**Neural Network (default, `GENOME_TYPE = "neural"`):**
-Fixed-size feedforward network: 34 → 32 → 32 → 14. 2,638 parameters per genome. Mutation operators: weight perturbation (0.03), weight reset (0.001), node knockout (0.0005). Output biases tuned for viable starting phenotype (divide=+0.5, attack=-0.3).
+### Environment API (`simulation/env_api.py`)
+Runtime parameter modification: `get_metrics()`, `set_parameter()`, `add_deposit()`, `trigger_event()`, `get_population_snapshot()`. Infrastructure for future LLM integration.
 
-**Chemical Reaction Network (Step 12, `GENOME_TYPE = "crn"`):**
-8 internal chemicals with persistent concentrations, 16 reaction rules. 112 parameters per genome. Sensory-to-chemical and chemical-to-action mappings create direct sensorimotor loops (light→eat, energy→divide, structure→move, cell_ahead→bond, age→attack). Mutation: perturbation (0.02), rewiring (0.01), duplication/deletion (0.005). CRN_ACTION_THRESHOLD = 0.25, sensory blend ratio 0.3/0.7 (memory/input).
+### OEE Metrics (`analysis/oee_metrics.py`)
+Bedau evolutionary activity, MODES (change/novelty/complexity/ecology), Shannon entropy, mutual information, bond density. Plateau detection at 50+ stalled snapshots. Logged to `oee_metrics.jsonl` every 1,000 ticks.
 
-**200k-tick comparison results:**
-| Metric | Neural | CRN |
-|--------|--------|-----|
-| Mean population | 856 | 87 |
-| Movement fraction | 38.6% | 1.5% |
-| Attack fraction | 0.6% | 12.8% |
-| Bond fraction | 9.0% | 21.1% |
-| Shannon entropy | 9.69 | 4.94 |
-| Evolutionary activity | 0.75 | 2.16 |
-
-**Known CRN issues:** Low carrying capacity (~100 cells vs ~800 for neural). High attack rate from age-gated sensorimotor loop. Low movement limits chemotaxis evolution. Population requires respawn safety net (100 cells when below 50). CRN needs further tuning — see Section 10 item 7.
-
-### 3.5 Energy Model — COMPLETE
-
-Photosynthesis, chemical consumption, predation with kill rewards. Full cost table for all actions. Energy conservation enforced. Death from starvation, membrane failure, and old age.
-
-**Enhanced predation** (Step 11): When a cell kills another via attack, the killer absorbs 50% of victim's chemicals + 2.0 energy bonus. Remaining 50% spills to environment. `cell_last_attacker` field tracks who killed whom.
-
-### 3.6 Cell Lifecycle — COMPLETE
-
-Spawn, tick update (sense → think → act → metabolize → check death), division with mutation, death with chemical spillage. Emergency respawn: 100 fresh cells seeded when population drops below 50 (rate-limited to once per 5,000 ticks).
-
-### 3.7 Bonding — COMPLETE (Fixed)
-
-Mutual bond formation, chemical sharing with lossy transfer, coordinated group movement, bond signal relay.
-
-**Bond strength decay** (Step 8a): Bonds start at strength 0.5. Decay by 0.02/tick without reinforcement. Reinforced by 0.03/tick when BOTH cells fire bond output. Auto-break below 0.05 strength. Sharing rate scaled by strength.
-
-**Lossy transfer** (Step 8b): 30% of shared resources destroyed in transit. Long chains become net energy drains; short purposeful pairs remain viable.
-
-**Bond signal channels** (Step 8c): 4 signal floats per bond direction. Cells emit signals via action outputs [10..13], receive partner signals via sensory inputs [18..33]. Enables GNN-like distributed computation. Neural genome: 88.7% of bonded cells have nonzero signals at 200k ticks.
-
-**Validation results:** Degenerate chains eliminated. Bond strength distribution is bimodal (0.5 initial, 1.0 reinforced). Average cluster size 2-5 cells with rare outliers.
-
-### 3.8 Visualization — COMPLETE
-
-Grid rendering, species coloring by genome hash, chemical heatmap overlays, light overlay, basic stats display.
-
-### 3.9 Environment API — COMPLETE (Step 13)
-
-`simulation/env_api.py`: Clean Python API for runtime environment modification. `get_metrics()`, `set_parameter()`, `get_parameter()`, `add_deposit()`, `trigger_event()`, `get_population_snapshot()`. Infrastructure for future LLM-guided environment design.
-
-### 3.10 OEE Metrics — COMPLETE (Step 14)
-
-`analysis/oee_metrics.py`: Comprehensive open-ended evolution measurement. Bedau evolutionary activity, MODES metrics (change, novelty, complexity, ecology), Shannon entropy, mutual information (sense-action coupling), bond density. Plateau detection flags when metrics stall for 50+ snapshots. Logged to `oee_metrics.jsonl` every 1,000 ticks.
-
-### 3.11 Validation & Analysis Tools — COMPLETE
-
-- `validate.py`: 11-check automated validation harness. Tests population stability, bond dynamics, gradient noise, archipelago, predation, genome diversity, energy balance, cluster analysis. Generates diagnostic plots.
-- `analysis/compare_runs.py`: Side-by-side Neural vs CRN comparison. 6-panel dynamics plot + 6-panel OEE plot + markdown report.
+### Analysis Infrastructure
+See Section 8 for full tool descriptions and usage.
 
 ---
 
@@ -165,628 +89,344 @@ Grid rendering, species coloring by genome hash, chemical heatmap overlays, ligh
 
 ```
 cybercell/
-├── CLAUDE.md                  ← This file (project brief)
-├── README.md                  ← Public-facing project description
-├── requirements.txt           ← Python dependencies (taichi, numpy)
-├── config.py                  ← All configurable parameters
-├── main.py                    ← Entry point. Initializes simulation, runs main loop.
-├── validate.py                ← Automated validation harness (11 checks, plots)
+├── CLAUDE.md                  <- This file
+├── config.py                  <- All tunable parameters (single source of truth)
+├── main.py                    <- Entry point (backend auto-selection, headless mode)
+├── validate.py                <- Backward-compat wrapper -> analysis/validate.py
 ├── world/
-│   ├── __init__.py
-│   ├── grid.py                ← World grid, terrain zones, light model, day/night cycle.
-│   ├── chemistry.py           ← Chemical fields, diffusion, deposits, relocation.
-│   └── archipelago.py         ← Soft-wall quadrant islands, migration, param variance.
+│   ├── grid.py                <- World grid, terrain zones, light, day/night cycle
+│   ├── chemistry.py           <- Chemical fields, diffusion, deposits, relocation
+│   └── archipelago.py         <- Soft-wall quadrants, migration, param variance
 ├── cell/
-│   ├── __init__.py
-│   ├── cell_state.py          ← Cell state fields (pos, energy, bonds, signals, etc.)
-│   ├── genome.py              ← Neural network genome (baseline). 34→32→32→14.
-│   ├── crn_genome.py          ← Chemical reaction network genome. 8 chemicals, 16 reactions.
-│   ├── sensing.py             ← 34 sensory inputs (18 base + 16 bond signals) with noise.
-│   ├── actions.py             ← 14 action outputs (10 base + 4 bond signal emission).
-│   ├── bonding.py             ← Bond formation, strength decay, lossy sharing, signal relay.
-│   └── lifecycle.py           ← Photosynthesis, metabolism, death, kill rewards.
+│   ├── cell_state.py          <- Cell state fields (pos, energy, bonds, signals, etc.)
+│   ├── genome.py              <- Neural network genome. 34->32->32->14
+│   ├── crn_genome.py          <- CRN genome. 16 chemicals (3 zones), 16 reactions
+│   ├── sensing.py             <- 34 sensory inputs with noise
+│   ├── actions.py             <- 14 action outputs
+│   ├── bonding.py             <- Bond formation, decay, lossy sharing, signal relay
+│   └── lifecycle.py           <- Photosynthesis, metabolism, death, kill rewards
 ├── simulation/
-│   ├── __init__.py
-│   ├── engine.py              ← Main simulation tick (dispatches neural or CRN).
-│   ├── spawner.py             ← Initial seeding and emergency respawn.
-│   ├── checkpoint.py          ← Save/load full simulation state.
-│   └── env_api.py             ← Runtime environment modification API.
+│   ├── engine.py              <- Main tick loop (dispatches neural or CRN)
+│   ├── spawner.py             <- Initial seeding and emergency respawn
+│   ├── checkpoint.py          <- Save/load full simulation state
+│   └── env_api.py             <- Runtime environment modification API
 ├── visualization/
-│   ├── __init__.py
-│   └── renderer.py            ← Taichi GUI rendering, color mapping, overlays, stats.
+│   └── renderer.py            <- Taichi GUI rendering, overlays, stats
 ├── analysis/
-│   ├── __init__.py
-│   ├── metrics.py             ← Population stats, diversity, movement, predation.
-│   ├── logger.py              ← Periodic snapshots + OEE metrics to disk.
-│   ├── oee_metrics.py         ← Open-ended evolution metrics (Bedau, MODES, MI).
-│   ├── compare_runs.py        ← Side-by-side Neural vs CRN comparison plots.
-│   ├── study.py               ← Automated study runner and report generation.
-│   ├── lineage_analysis.py    ← Genome lineage tree analysis.
-│   ├── burst_analysis.py      ← Short burst frame-by-frame analysis.
-│   ├── spatial_analysis.py    ← Spatial distribution analysis.
-│   ├── bonding_analysis.py    ← Bond network analysis.
-│   └── gnn_analysis.py        ← (FUTURE) Bond network information flow.
+│   ├── metrics.py             <- Population stats, diversity, CRN snapshot extraction
+│   ├── logger.py              <- Periodic snapshots to disk (metrics, OEE, CRN, spatial)
+│   ├── oee_metrics.py         <- Open-ended evolution metrics (Bedau, MODES, MI)
+│   ├── crn_analysis.py        <- 9-panel CRN diagnostics + report
+│   ├── compare_runs.py        <- Side-by-side Neural vs CRN comparison
+│   ├── validate.py            <- Validation harness (13 checks for neural, 18 for CRN)
+│   ├── run_all.py             <- Unified CLI: runs all applicable analyses on a run
+│   ├── study.py               <- Evolutionary dynamics study + report
+│   ├── lineage_analysis.py    <- Phylogenetic tree, selective sweeps, bias evolution
+│   ├── spatial_analysis.py    <- Spatial distribution analysis
+│   ├── bonding_analysis.py    <- Bond network analysis
+│   └── burst_analysis.py      <- Frame-by-frame burst analysis
 └── tests/
     ├── test_chemistry.py
     ├── test_energy.py
     ├── test_genome.py
     ├── test_lifecycle.py
-    ├── test_predation.py
-    ├── test_genome_crn.py      ← (FUTURE) Tests for CRN genome.
-    └── test_bonding.py         ← (FUTURE) Tests for bond decay, signals.
+    └── test_predation.py
 ```
 
 ---
 
-## 5. Research-Informed Upgrades — IMPLEMENTED
+## 5. CRN Genome Architecture
 
-Steps 8-14 are implemented and validated on the `feature/research-upgrades` branch. This section documents the design intent and implementation details for reference.
+The CRN is a biologically-inspired computational substrate that supports memory, development, and differentiation. It replaces the feedforward neural network with a chemical reaction network where concentrations persist between ticks.
 
-### Step 8: Fix Bonding Dynamics — COMPLETE
+### 3-Zone Chemical Space (16 chemicals)
 
-The chain formation problem must be solved before bonding can drive meaningful multicellularity.
+| Zone | Indices | Role | Behavior |
+|------|---------|------|----------|
+| Sensory | 0-7 | Environment inputs | Blended with env each tick (50/50 memory/input) |
+| Hidden | 8-11 | Memory/gates | Purely internal, evolved decay rates |
+| Action | 12-15 | Action triggers | Reset to evolved biases each tick |
 
-**8a. Bond decay with active maintenance:**
-- Each bond has a `strength` value (0.0 to 1.0). Starts at 0.5 on formation.
-- Every tick, strength decreases by `BOND_DECAY_RATE` (default: 0.02).
-- If BOTH cells have bond output above 0.5, strength increases by `BOND_REINFORCE_RATE` (default: 0.03).
-- When strength reaches 0, the bond breaks.
-- Effect: bonds that aren't actively maintained by both cells naturally lapse.
+This separation forces reactions to build sensory->hidden->action circuits rather than direct sensorimotor loops (the CRN equivalent of a hidden layer). Negative thresholds enable NOT-gate logic.
 
-**8b. Lossy resource transfer:**
-- Chemical sharing through bonds loses `1 - BOND_TRANSFER_EFFICIENCY` (default: 0.7, so 30% loss).
-- Cell A loses 2 energy, Cell B gains only 1.4. The 0.6 is destroyed.
-- Effect: long chains become net energy drains. Short purposeful pairs remain viable.
-
-**8c. Expanded bond signal channel:**
-- Increase from 1 signal float to `BOND_SIGNAL_WIDTH` (default: 4) floats per bond.
-- Each cell has 4 bond signal outputs added to its action space.
-- Each cell receives up to 4 × 4 = 16 bond signal inputs (4 values from each of 4 possible bonded neighbors).
-- Sensory input vector grows from 18 to 34. Action output vector grows from 10 to 14.
-- Effect: provides bandwidth for genuine inter-cell communication, enabling the GNN-like distributed computation.
-
-**8d. Add neighbor quality sensing:** *(Already implemented)*
-- prey_energy[16] and prey_membrane[17] already exist in `sensing.py`, providing energy and membrane levels of the cell ahead.
-- No additional code changes needed.
-
-**New config values:**
-```python
-# Bonding (updated)
-BOND_DECAY_RATE = 0.02
-BOND_REINFORCE_RATE = 0.03
-BOND_TRANSFER_EFFICIENCY = 0.7
-BOND_SIGNAL_WIDTH = 4
-BOND_INITIAL_STRENGTH = 0.5
+### Sensory Mapping
+```
+C0 <- light_here       C4 <- S_gradient_y
+C1 <- energy_level     C5 <- cell_ahead
+C2 <- structure         C6 <- bond_count
+C3 <- S_gradient_x     C7 <- age
 ```
 
-**Test:** Run for 200,000+ ticks. Degenerate chains should disappear. If bonding stops evolving entirely, reduce BOND_DECAY_RATE or increase BOND_TRANSFER_EFFICIENCY. Watch for: short clusters (2-5 cells) that persist and outsurvive solo cells.
-
-### Step 9: Noisy Gradients and Patchy Resources — COMPLETE
-
-Research finding: multicellular aggregates evolve because they perform chemotaxis more efficiently than single cells when gradients are noisy. This creates direct fitness advantage for bonded clusters that integrate sensory information.
-
-**9a. Add Gaussian noise to chemical gradient sensing:**
-- Each cell's gradient inputs get additive noise: `gradient + N(0, GRADIENT_NOISE_SIGMA)`.
-- Default `GRADIENT_NOISE_SIGMA = 0.15` — enough that single cells frequently misjudge direction, but a cluster averaging multiple readings can triangulate accurately.
-
-**9b. Make resources patchier:**
-- Reduce the number of deposits but increase their concentration.
-- Resources appear as tight clusters separated by barren zones.
-- Resources shift position slowly over time (deposits deplete and new ones spawn elsewhere every ~10,000 ticks).
-- Effect: cells must navigate to find food, not just sit on it. Navigation under noisy sensing rewards multicellular collectives.
-
-**New config values:**
-```python
-# Sensing noise
-GRADIENT_NOISE_SIGMA = 0.15
-
-# Patchy resources
-NUM_DEPOSITS_S = 80           # fewer but richer (was 200)
-NUM_DEPOSITS_R = 40           # fewer but richer (was 100)
-DEPOSIT_CONCENTRATION = 5.0   # higher concentration per deposit
-DEPOSIT_SHIFT_INTERVAL = 10000  # ticks between deposit relocation
+### Action Mapping
 ```
-
-**Test:** Solo cells should visibly struggle to navigate to resources. Bonded clusters of 2-4 cells should find resources more reliably. If solo cells still navigate perfectly, increase GRADIENT_NOISE_SIGMA.
-
-### Step 10: Archipelago Model for Diversity Maintenance — COMPLETE
-
-This is the single most impactful change for sustaining open-ended evolution. Without it, the dominant strategy takes over and innovation stops.
-
-**Architecture:**
-- Instead of one 500×500 world, run `NUM_ISLANDS` (default: 4) independent worlds of 250×250 each.
-- Each island has its own slightly different environment parameters (light intensity, resource distribution, deposit density) drawn from a configurable range around the defaults.
-- Every `MIGRATION_INTERVAL` ticks (default: 5,000), copy a small number of cells (`MIGRATION_COUNT`, default: 10) from each island to a random other island.
-- Migrants are selected proportionally to fitness (energy level) — successful strategies spread, but slowly.
-
-**Why this works:**
-- Each island evolves independently, exploring different regions of genome space.
-- Occasional migration introduces novel genomes that can exploit niches the local population hasn't explored.
-- Prevents single-strategy takeover because isolated populations can maintain alternative strategies.
-- When migrants from one island encounter organisms from another, it creates the sudden competitive pressure (like biological invasive species) that drives rapid adaptation.
-
-**Actual implementation:** Soft-wall quadrant partitioning rather than separate field duplication. The existing 500×500 grid is divided into 4 250×250 quadrants. Boundaries have reduced diffusion, creating semi-isolation. This avoids massive kernel modifications while achieving the key diversity-maintenance benefit. Migration is Python-level, fitness-proportional cell teleportation between quadrants.
-
-**New config values:**
-```python
-# Archipelago
-NUM_ISLANDS = 4
-ISLAND_WIDTH = 250
-ISLAND_HEIGHT = 250
-MIGRATION_INTERVAL = 5000
-MIGRATION_COUNT = 10
-ISLAND_ENV_VARIANCE = 0.2    # each island's params vary ±20% from defaults
+C12 -> eat    C14 -> divide
+C13 -> move   C15 -> attack
 ```
+Turns are handled separately via facing-aware gradient steering. Hidden chemicals 8-9 drive signal/bond via auxiliary thresholds.
 
-**Test:** Run 4 islands for 500,000 ticks. Each island should develop a visibly different dominant strategy (different colors/behaviors). After migration events, watch for: periods of rapid change as new genomes compete with established populations.
+### Genome Layout (120 parameters)
+- **Reactions** (0-111): 16 reactions x 7 params (input_a, input_b, output, threshold_a, threshold_b, rate, decay)
+- **Action biases** (112-115): eat, move, divide, attack — reset to these values each tick
+- **Hidden decays** (116-119): per-chemical decay rates for hidden zone
 
-### Step 11: Enhanced Predation — COMPLETE
-
-Predation is the engine of arms races, which are the engine of complexity. Currently, predation may not be energetically viable enough to evolve reliably.
-
-**Changes:**
-- **Direct absorption:** When a cell kills another cell via attack, the killer automatically absorbs 50% of the victim's internal chemicals directly. The remaining 50% spills to the environment as before.
-- **Kill reward bonus:** Killer gains a flat `KILL_ENERGY_BONUS` (default: 5.0) energy on kill, representing the efficiency advantage of consuming an already-organized energy source.
-- **Predator seeding (optional):** Every `PREDATOR_SEED_INTERVAL` ticks (default: 100,000), if no cells with recent attack behavior exist in a given island, seed 5 cells with hand-designed predator genomes (weights biased toward move-toward-cells and attack). These are not optimized — they just break the chicken-and-egg problem. Once prey evolve defenses, the seeded predators will be outcompeted by evolved ones.
-
-**New config values:**
-```python
-# Predation (enhanced)
-KILL_ABSORPTION_RATE = 0.5
-KILL_ENERGY_BONUS = 5.0
-PREDATOR_SEED_INTERVAL = 100000
-PREDATOR_SEED_COUNT = 5
-```
-
-**Test:** Predators should evolve or persist on at least some islands. Look for oscillating predator-prey population dynamics (Lotka-Volterra cycles). If predators go extinct everywhere, increase KILL_ENERGY_BONUS or decrease ATTACK_COST.
-
-### Step 12: Chemical Reaction Network Genome — COMPLETE (needs tuning)
-
-This is the most significant architectural change. It replaces the feedforward neural network with a biologically-inspired computational substrate that naturally supports memory, development, and differentiation.
-
-**Architecture — A CRN genome consists of:**
-- A set of `NUM_INTERNAL_CHEMICALS` (default: 8) internal chemical species, each with a concentration that persists between ticks.
-- A set of `MAX_REACTIONS` (default: 16) reaction rules, each defined as:
-  ```
-  Reaction {
-      input_a: int         — index of input chemical A (0 to NUM_INTERNAL_CHEMICALS-1, or sensory channel index)
-      input_b: int         — index of input chemical B
-      output: int          — index of output chemical
-      threshold_a: float   — minimum concentration of A for reaction to fire
-      threshold_b: float   — minimum concentration of B for reaction to fire
-      rate: float          — production rate of output when conditions met
-      decay_rate: float    — how fast the output chemical decays on its own
-  }
-  ```
-- **Sensory coupling:** External sensory inputs (light, gradients, etc.) directly set the concentrations of specific internal chemicals each tick. E.g., internal chemical 0 = light intensity, chemical 1 = S gradient x, etc.
-- **Action coupling:** Action outputs are triggered when specific internal chemicals exceed thresholds. E.g., if internal chemical 6 > 0.5, fire "move forward." If chemical 7 > 0.5, fire "divide."
-- **Memory is free:** Chemical concentrations persist between ticks. A reaction that produces a slow-decaying chemical creates memory. A reaction chain where A triggers B triggers C creates sequential behavior. Oscillating reactions (A promotes B, B inhibits A) create rhythmic behavior.
-- **Differentiation is natural:** Two cells with the same CRN genome but in different environments (different light, different neighbors) develop different internal chemical profiles, because their sensory inputs differ. Over time, their internal states diverge, driving different behaviors from the same genome.
-
-**Genome size:** 16 reactions × 7 parameters = 112 floats. Much smaller than the neural network (1,994 floats), which means the mutation landscape is far more navigable.
-
-**Mutation operators:**
-- **Parameter perturbation:** Each parameter has probability 0.02 of perturbation by N(0, 0.1).
-- **Reaction duplication:** Probability 0.005 of duplicating a reaction with slight noise (if space in MAX_REACTIONS).
-- **Reaction deletion:** Probability 0.005 of disabling a reaction (setting rate to 0).
-- **Rewiring:** Probability 0.01 of changing a reaction's input or output chemical index.
-
-**Evaluation per tick:**
-```
-For each cell:
-    1. Set sensory chemicals from environment.
-    2. For each reaction: if input_a and input_b exceed thresholds, add rate * dt to output chemical.
-    3. Apply decay to all internal chemicals.
-    4. Read action chemicals and fire actions above threshold.
-```
-
-This is O(NUM_INTERNAL_CHEMICALS + MAX_REACTIONS) per cell per tick — much cheaper than the neural network evaluation.
-
-**Keep the neural network genome as an alternative.** Both genome types should be selectable via config. This enables A/B comparison: run the same environment with CRN vs neural network genomes and compare evolutionary outcomes.
-
-**New config values:**
-```python
-# CRN Genome
-GENOME_TYPE = "crn"            # "crn" or "neural_network"
-NUM_INTERNAL_CHEMICALS = 8
-MAX_REACTIONS = 16
-CRN_MUTATION_RATE_PERTURB = 0.02
-CRN_MUTATION_SIGMA = 0.1
-CRN_MUTATION_RATE_DUPLICATE = 0.005
-CRN_MUTATION_RATE_DELETE = 0.005
-CRN_MUTATION_RATE_REWIRE = 0.01
-CRN_ACTION_THRESHOLD = 0.5
-```
-
-**Actual sensory-to-chemical mapping (tuned for viability):**
-```
-Chemical 0 ← light_here        → eat       (light triggers eating)
-Chemical 1 ← energy_level      → divide    (energy triggers division)
-Chemical 2 ← structure         → move      (fed cells move around)
-Chemical 3 ← S_gradient_x      → turn_left (gradients steer turning)
-Chemical 4 ← S_gradient_y      → turn_right
-Chemical 5 ← cell_ahead        → bond      (neighbor → try to bond, harmless)
-Chemical 6 ← bond_count        → signal    (bonded → emit signal)
-Chemical 7 ← age               → attack    (age-gated: only old cells attack)
-```
-
-Key design choices from tuning:
-- **Attack is age-gated** — mapping cell_ahead→attack caused mass extinction (all cells auto-attacked neighbors). Mapping age→attack means young cells don't attack, and predation must evolve through reaction chains that boost chemical 7 earlier.
-- **Move is structure-gated** — gradient signals are too weak (~0.03) to cross threshold. Mapping structure→move means fed cells move; starving cells stay still.
-- **CRN_ACTION_THRESHOLD = 0.25** (not 0.5) — with 0.3/0.7 sensory blend, most chemicals peak at 0.3-0.7. Threshold 0.5 prevented almost all actions from firing.
-- **Sensory blend ratio 0.3/0.7** — 70% environment, 30% memory. Original 50/50 was too conservative; cells couldn't respond to current conditions.
-
-Note: the same chemical is both a sensory input and an action trigger, creating direct sensorimotor loops. More complex behaviors emerge when reactions create indirect pathways.
-
-**Test:** Run CRN and neural network versions in identical environments for 200,000 ticks. Compare:
-- Time to evolve chemotaxis.
-- Diversity of strategies (number of distinct behavioral phenotypes).
-- Genome complexity over time (active reaction count for CRN, effective network connectivity for NN).
-- Whether CRN cells exhibit memory-dependent behavior (different response to same stimulus based on recent history).
-
-### Step 13: Environment Parameter API — COMPLETE
-
-Expose all tunable environment parameters through a clean Python API that an external process can call. This is infrastructure for the eventual LLM-guided environment design.
-
-**`environment_api.py` provides:**
-```python
-class EnvironmentAPI:
-    def get_metrics(self) -> dict:
-        """Return current simulation metrics: population, diversity, 
-        avg energy, births/deaths rate, genome complexity stats, 
-        OEE activity measures."""
-    
-    def set_parameter(self, name: str, value: float):
-        """Modify any config parameter at runtime."""
-    
-    def add_deposit(self, x: int, y: int, chemical: str, amount: float):
-        """Place a new chemical deposit."""
-    
-    def trigger_event(self, event_type: str, **kwargs):
-        """Trigger environmental events: 'catastrophe' (kill % of cells),
-        'resource_boom' (flood area with chemicals), 
-        'barrier' (create impassable region), etc."""
-    
-    def get_population_snapshot(self) -> dict:
-        """Return detailed population data for analysis."""
-```
-
-This does not connect to an LLM yet. It just ensures the interface exists so that when we add LLM integration later, no simulation code needs to change.
-
-### Step 14: OEE Metrics — COMPLETE
-
-Implement proper open-ended evolution measurement so we can objectively assess whether complexity is still increasing or has plateaued.
-
-**Metrics to implement:**
-
-- **Bedau's evolutionary activity:** Track the frequency of each genome over time. Activity = rate of change of genome frequencies. Bounded activity = plateau. Unbounded activity = still evolving.
-- **MODES metrics (Dolson et al.):** Change (is the population still changing?), Novelty (are new genome types appearing?), Complexity (are genomes getting more complex?), Ecology (is ecosystem diversity maintained?).
-- **Behavioral diversity:** Cluster organisms by behavioral phenotype (what actions they take in standardized test scenarios), not just genotype. Two different genomes that behave identically are not true diversity.
-- **Information-theoretic measures:** Shannon entropy of genome distribution. Mutual information between sensory inputs and action outputs (are organisms actually using their senses, or acting randomly?).
-- **Bond network analysis:** For multicellular organisms: entropy of bond signals (is communication carrying information?), graph topology metrics (clustering coefficient, diameter), correlation between bond signals and environmental events (do signals respond to stimuli?).
-
-Log all metrics every 1,000 ticks. Plot rolling averages. Flag when metrics plateau for more than 50,000 ticks — this is the "evolution has stalled" signal.
+### Key Design Decisions
+- **Attack is age-gated** (C7->C15): mapping cell_ahead->attack caused mass extinction.
+- **Move is structure-gated** (C2->C13): bootstrap rate=0.2 gives ~9% initial movement with sigmoid.
+- **Sigmoid action firing** (gain=30, center=0.5): replaces hard threshold. P(fire) = sigmoid(30*(chem - 0.5)). At bias 0.3: P≈0.3%. At bias+reaction 0.6: P≈95%. Provides evolutionary gradient below threshold without wasteful spontaneous actions.
+- **Hidden basal production** (0.005/tick): steady-state floor at 0.25 (below 0.5 aux threshold). Keeps hidden chemicals positive and computationally useful. Reactions can push above 0.5 to activate signal/bond.
+- **Hidden decay 0.02/tick**: half-life ~35 ticks. Long-term memory, prevents runaway.
+- **Per-reaction decay restricted to sensory zone only** (0-7): action chemicals reset each tick, hidden has dedicated decay. Fixes bug where actions were decayed 3-5x per tick.
+- **Zone-aware clamping**: sensory/hidden [0, 5], action [-1, 5]. Prevents negative concentrations in sensory/hidden zones.
 
 ---
 
-## 6. Configuration Defaults
+## 6. Configuration
 
-All defined in `config.py`. Every parameter tunable without changing any other code. Values below match the actual config.py on the `feature/research-upgrades` branch.
+All parameters in `config.py` — the single source of truth. Key non-obvious values:
 
-```python
-# === World ===
-GRID_WIDTH = 500
-GRID_HEIGHT = 500
-LIGHT_ZONE_END = 166
-DIM_ZONE_END = 333
-DAY_LENGTH = 1000
-LIGHT_BRIGHT = 1.0
-LIGHT_DIM = 0.3
-LIGHT_DARK = 0.0
-
-# === Chemistry ===
-DIFFUSION_RATE_S = 0.01
-DIFFUSION_RATE_R = 0.03
-DIFFUSION_RATE_G = 0.3
-E_DECAY_FLAT = 0.02
-DECAY_RATE_S = 0.001
-DECAY_RATE_R = 0.001
-DECAY_RATE_G = 0.05
-DEPOSIT_REPLENISH_RATE = 0.012
-NUM_DEPOSITS_S = 200
-NUM_DEPOSITS_R = 200
-DEPOSIT_CLUSTER_RADIUS = 10    # tighter clusters (was 15)
-DEPOSIT_CLUSTER_AMOUNT = 10.0  # higher concentration (was 5.0)
-DEPOSIT_RELOCATE_INTERVAL = 25000
-DEPOSIT_RELOCATE_FRACTION = 0.2
-R_LIGHT_ZONE_FRACTION = 0.15
-
-# === Archipelago ===
-ARCHIPELAGO_ENABLED = True
-NUM_ISLANDS = 4
-MIGRATION_INTERVAL = 5000
-MIGRATION_COUNT = 10
-ISLAND_ENV_VARIANCE = 0.2
-ISLAND_BOUNDARY_DIFFUSION = 0.002
-
-# === Sensing ===
-GRADIENT_NOISE_SIGMA = 0.15
-
-# === Cells ===
-MAX_CELLS = 50000
-INITIAL_CELL_COUNT = 1000
-MIN_POPULATION = 50            # respawn threshold
-RESPAWN_COUNT = 100
-RESPAWN_INTERVAL = 5000
-MAX_CELL_AGE = 5000
-INITIAL_ENERGY = 35.0
-INITIAL_STRUCTURE = 25.0
-INITIAL_REPMAT = 10.0
-MEMBRANE_INITIAL = 100.0
-ENERGY_ZERO_MEMBRANE_DAMAGE = 5.0
-AGE_MEMBRANE_DECAY = 1.0
-
-# === Energy Costs ===
-BASAL_METABOLISM = 0.08
-MOVE_COST = 0.1
-TURN_COST = 0.02
-EAT_COST = 0.02
-SIGNAL_COST = 0.1
-DIVIDE_COST = 20.0
-DIVIDE_R_COST = 5.0
-BOND_COST = 0.01
-ATTACK_COST = 0.3
-REPAIR_COST = 0.1
-REPAIR_S_COST = 0.5
-REPAIR_MEMBRANE_GAIN = 5.0
-NETWORK_COST = 0.01
-
-# === Energy Income ===
-PHOTOSYNTHESIS_RATE = 0.45
-S_ENERGY_VALUE = 0.3
-R_ENERGY_VALUE = 0.5
-EAT_ABSORB_CAP = 2.0
-PASSIVE_EAT_CAP = 0.05
-ATTACK_MEMBRANE_DAMAGE = 8.0
-KILL_ABSORPTION_RATE = 0.5
-KILL_ENERGY_BONUS = 2.0
-
-# === Bonding ===
-BOND_SHARE_RATE = 0.1
-BOND_INITIAL_STRENGTH = 0.5
-BOND_DECAY_RATE = 0.02
-BOND_REINFORCE_RATE = 0.03
-BOND_BREAK_THRESHOLD = 0.05
-BOND_TRANSFER_LOSS = 0.3
-BOND_SIGNAL_CHANNELS = 4
-
-# === Genome (Neural Network — default) ===
-GENOME_TYPE = "neural"         # "neural" or "crn"
-MAX_GENOMES = 50000
-NUM_INPUTS = 34                # 18 base + 16 bond signal inputs
-NETWORK_HIDDEN_SIZE = 32
-NUM_OUTPUTS = 14               # 10 base + 4 bond signal outputs
-GENOME_SIZE = 2638             # 34*32+32+32*32+32+32*14+14
-ATTACK_BIAS = -0.3
-SEED_WEIGHT_SIGMA = 0.01
-GRADIENT_SCALE_S = 3.0
-GRADIENT_SCALE_R = 5.0
-ACTION_THRESHOLD = 0.5
-
-# === Mutation (Neural Network) ===
-MUTATION_RATE_PERTURB = 0.03
-MUTATION_SIGMA = 0.1
-MUTATION_RATE_RESET = 0.001
-MUTATION_RATE_KNOCKOUT = 0.0005
-
-# === CRN Genome ===
-NUM_INTERNAL_CHEMICALS = 8
-MAX_REACTIONS = 16
-CRN_PARAMS_PER_REACTION = 7
-CRN_GENOME_SIZE = 112          # 16 * 7
-CRN_MUTATION_RATE_PERTURB = 0.02
-CRN_MUTATION_SIGMA = 0.1
-CRN_MUTATION_RATE_DUPLICATE = 0.005
-CRN_MUTATION_RATE_DELETE = 0.005
-CRN_MUTATION_RATE_REWIRE = 0.01
-CRN_ACTION_THRESHOLD = 0.25   # tuned down from 0.5
-
-# === Reproduction ===
-PARENT_RESOURCE_SHARE = 0.6
-DAUGHTER_RESOURCE_SHARE = 0.4
-```
+| Parameter | Value | Why |
+|-----------|-------|-----|
+| `GRADIENT_NOISE_SIGMA` | 0.15 | Forces clusters to be better navigators than solo cells |
+| `BOND_DECAY_RATE` | 0.001 | Near-permanent bonds (>500 ticks); enables multicellularity |
+| `BOND_TRANSFER_LOSS` | 0.3 | Makes long chains unprofitable; short pairs viable |
+| `KILL_ABSORPTION_RATE` | 0.12 | Ecological ~10-15% trophic transfer; prevents predation spirals |
+| `KILL_ENERGY_BONUS` | 0.0 | No flat bonus — predation profit from absorption only |
+| `ATTACK_BIAS` | -0.3 | Initial sigmoid output ~0.43 — predation must be evolved |
+| `CRN_ACTION_GAIN` | 30.0 | Sigmoid steepness: <0.3% at bias, >95% when boosted by reactions |
+| `CRN_ACTION_CENTER` | 0.5 | Sigmoid midpoint matches old threshold |
+| `CRN_HIDDEN_BASAL` | 0.005 | Steady-state 0.25, below aux action threshold of 0.5 |
+| `CRN_SENSORY_BLEND` | 0.5 | 50% memory / 50% environment per tick |
+| `DEPOSIT_RELOCATE_INTERVAL` | 25000 | Forces navigation; static deposits allow sessile strategies |
+| `MIGRATION_INTERVAL` | 200 | Continuous trickle (was 5000); Nm≈1.25 per generation |
+| `MIGRATION_COUNT` | 1 | Per-island per event; uniform random selection (was fitness-proportional) |
+| `ISLAND_ENV_VARIANCE` | 0.3 | ±30% parameter variance; more distinct islands |
 
 ---
 
-## 7. Key Technical Notes
-
-### Taichi-Specific Patterns
-
-**Cell update kernel pattern:**
-```python
-@ti.kernel
-def update_cells():
-    for i in range(max_cells):
-        if cell_alive[i]:
-            # Read sensory inputs
-            # Evaluate genome (CRN or neural network based on config)
-            # Execute actions
-            # Deduct metabolism
-```
-
-**CRN evaluation kernel pattern:**
-```python
-@ti.kernel
-def evaluate_crn():
-    for i in range(max_cells):
-        if cell_alive[i]:
-            gid = cell_genome_id[i]
-            # Set sensory chemicals from environment
-            for s in range(NUM_SENSORY_CHANNELS):
-                internal_chemicals[i, sensory_map[s]] = sensory_input[i, s]
-            # Evaluate reactions
-            for r in range(MAX_REACTIONS):
-                input_a = reaction_input_a[gid, r]
-                input_b = reaction_input_b[gid, r]
-                if (internal_chemicals[i, input_a] > reaction_threshold_a[gid, r] and
-                    internal_chemicals[i, input_b] > reaction_threshold_b[gid, r]):
-                    output = reaction_output[gid, r]
-                    internal_chemicals[i, output] += reaction_rate[gid, r]
-            # Apply decay
-            for c in range(NUM_INTERNAL_CHEMICALS):
-                internal_chemicals[i, c] *= (1.0 - chemical_decay[gid, c])
-            # Read action outputs
-            for a in range(NUM_ACTIONS):
-                if internal_chemicals[i, action_map[a]] > CRN_ACTION_THRESHOLD:
-                    action_active[i, a] = 1
-```
-
-**Diffusion kernel pattern (double-buffered):**
-```python
-@ti.kernel
-def diffuse(src: ti.template(), dst: ti.template(), rate: float):
-    for i, j in src:
-        val = src[i, j]
-        spread = val * rate * 0.25
-        # Use atomic adds to neighbors in dst
-        # Wrapping: (i + 1) % grid_size
-```
+## 7. Technical Notes
 
 ### Avoiding Common Pitfalls
 
-1. **Random number generation in Taichi:** Use `ti.random()` inside kernels. Do not use Python's `random` module inside `@ti.kernel` functions.
-2. **Race conditions in cell movement:** Two cells cannot move to the same grid cell. Resolve by processing moves in a random order (shuffle cell indices each tick) and checking occupancy before committing.
-3. **Division placement:** Scan 4 adjacent cells for an empty one. If none empty, division fails. Creates density-dependent reproduction pressure.
-4. **Genome table growth:** Fixed-size Taichi field, max_genomes = 50,000. Implement garbage collection for genomes with no living references.
-5. **Floating-point drift:** Clamp all chemical quantities to ≥ 0 after every subtraction.
-6. **Bond strength tracking:** Bond strength is stored per-bond (not per-cell). When accessing bond data, always check that the reciprocal bond exists — if cell A's bond to cell B says strength 0.5 but cell B has no bond to A, there's a data inconsistency bug.
+1. **Random numbers in Taichi:** Use `ti.random()` inside kernels, never Python's `random`.
+2. **Race conditions:** Two cells can't occupy the same cell. Check occupancy before committing moves.
+3. **Division placement:** Scan 4 neighbors for empty. If none, division fails (density-dependent pressure).
+4. **Genome table:** Fixed-size field (50k). Garbage collect genomes with no living references.
+5. **Floating-point drift:** Clamp all chemical quantities >= 0 after subtraction.
+6. **Bond consistency:** Always check reciprocal bonds exist — if A->B says 0.5 but B has no bond to A, it's a bug.
 
 ---
 
-## 8. Future Roadmap (Do Not Implement Yet)
+## 8. Analysis Infrastructure
 
-These are documented so architectural decisions don't accidentally prevent them.
+### Data Flow
+
+Simulation produces `runs/<timestamp>/` with:
+- `metrics.jsonl` — population, energy, movement, attack, bond stats (every 1k ticks)
+- `oee_metrics.jsonl` — Bedau activity, MODES, entropy, MI, bond density (every 1k ticks)
+- `crn_metrics.jsonl` — CRN-only: zone activations, biases, decays, reactions, zone flow (every 1k ticks)
+- `lineage.jsonl` — parent->child mutation events
+- `spatial/` — cell positions + bonds (every 10k ticks)
+- `genomes/` — full genome weights (every 50k ticks)
+- `burst/` — rapid consecutive frames (every 50k ticks)
+
+### Analysis Scripts
+
+All per-run scripts output to `analysis/output/<run_name>/`. Run individually or via unified CLI:
+
+```bash
+python analysis/run_all.py                      # latest run (auto-detect)
+python analysis/run_all.py runs/20260319_205444 # specific run
+```
+
+| Script | Output | Description |
+|--------|--------|-------------|
+| `study.py` | STUDY.md, evolution_report.png | Phase detection, rates, 6-panel dynamics |
+| `crn_analysis.py` | CRN_ANALYSIS.md, crn_evolution.png | 9-panel CRN diagnostics (zone activation, bias drift, reaction graph, zone flow) |
+| `lineage_analysis.py` | LINEAGE_ANALYSIS.md, lineage_tree.png | Phylogenetic trees, selective sweeps, bias evolution (CRN-aware) |
+| `compare_runs.py` | comparison_*.png, report.md | Side-by-side run comparison (dynamics + OEE + CRN) |
+| `spatial_analysis.py` | SPATIAL_ANALYSIS.md, spatial_*.png | Spatial distribution, zone occupation |
+| `bonding_analysis.py` | BONDING_ANALYSIS.md, bonding_*.png | Cluster persistence, bond network |
+| `burst_analysis.py` | BURST_ANALYSIS.md, filmstrip_*.png | Frame-by-frame movement tracking |
+| `validate.py` | VALIDATION_REPORT.txt, validation.png | 13-18 automated checks (stable output dirs) |
+
+Validate output uses stable dirs (`validate_neural_10000t/`) not timestamped. Compare uses run names (`comparison_<run1>_vs_<run2>/`).
+
+---
+
+## 9. Empirical Findings (50k-tick Comparative Runs, v5.0)
+
+### CRN Genome — 50k ticks (post-fix)
+
+**Population dynamics:**
+- Initial crash: 1015 → 348 (66% mortality, purifying selection)
+- Exponential recovery: 348 → 3498 by 50k (still rising, carrying capacity not reached)
+- Growth rate: 5.1% per 1K ticks post-bottleneck
+
+**Evolved strategy — "efficient plant":**
+- Movement: 40% initial → **1.4%** (evolved away — sessile strategy dominates)
+- Eating: ~95% via sigmoid (bootstrap reaction light→eat reliably fires)
+- Attack: 0.0% (never evolves)
+- Bonding: 3% → 7.3% (auto-bonds from division, some persist)
+- 96% of cells in light zone, 4% dim, 0% dark
+
+**CRN internals:**
+- 14.4/16 reactions active — complex networks maintained
+- Hidden zone mean: 0.247 (was -0.04 pre-fix — basal production working)
+- Reaction zone flow: 8 sensory→action (direct), 6 sensory→hidden (memory pathway)
+- NOT-gate logic: 1.2% inverted thresholds (emerging)
+- Action biases stable: eat +0.31, move +0.30, divide +0.18, attack -0.31
+
+**Diversity:**
+- Shannon entropy: 6.91 → 8.07 (rising — no convergence)
+- 3267 unique genomes at 50k
+- Root diversity: 881 → 43 (moderate selective sweep, 3x more diverse than neural)
+
+### Neural Genome — 50k ticks (post-fix)
+
+**Population dynamics:**
+- Initial crash: 2000 → 631 (68% mortality)
+- Stable oscillation: 800-1200 cells (carrying capacity ~1100)
+
+**Evolved strategy — "active forager":**
+- Movement: 25% → **29%** (chemotaxis evolved and maintained)
+- Attack: 0.1-0.2% (marginal predation)
+- Bonding: 100% → 10.7% (bonds from auto-division, declining)
+- Broader spatial distribution due to active movement
+
+**Diversity:**
+- Shannon entropy: 6.91 → 7.05 (stable)
+- Root diversity: 1013 → 13 (aggressive selective sweep)
+- Mutation rate: 2.35/tick (3x CRN due to larger genome)
+
+### CRN vs Neural at 50k ticks
+
+| Metric | CRN | Neural | Winner |
+|--------|-----|--------|--------|
+| Population | **3498** | 1155 | CRN (3x) |
+| Movement | 1.4% | **29%** | Neural |
+| Bonding | **7.3%** | 10.7% | Similar |
+| Shannon entropy | **8.07** | 7.05 | CRN |
+| Root diversity | **43** | 13 | CRN (3x) |
+| OEE entropy | **11.64** (rising) | 10.17 (falling) | CRN |
+| Mutual information | 0.0009 | **0.0039** | Neural |
+| Max cluster size | **22** | 14 | CRN |
+| Cluster topologies | mesh, chain, star | pairs, chains | CRN |
+
+**Key insight:** CRN achieves 3x population and higher diversity through metabolic efficiency (sessile strategy), while neural achieves behavioral complexity (chemotaxis) at a carrying capacity cost. Neither develops significant sensory-action coupling (MI near zero in both).
+
+---
+
+## 10. Known Issues — Priority Order
+
+### Fixed in v5.0
+| # | Issue | Fix Applied |
+|---|-------|-------------|
+| 1 | CRN movement dead | Sigmoid action firing (gain=30) + per-reaction decay restricted to sensory zone + bootstrap move rate=0.2. Movement now 9% early, evolves to 1.4% (sessile dominates but movement CAN evolve). |
+| 2 | CRN hidden zone suppressed | Basal production (0.005/tick, SS=0.25) + zone-aware clamping [0,5] + hidden decay 0.02. Hidden zone now 0.247. |
+| 3 | Neural bonding collapses | Bond decay 0.02→0.001 (near-permanent) + auto-bond at division (strength 0.1, breaks ~50 ticks). Bonding stable at 7-11% through 50k ticks. |
+| 5 | Selective sweep too fast | Continuous trickle migration (1 cell/200 ticks, uniform random). CRN root diversity 43 vs old 11. |
+| 6 | Predation bifurcation | Kill absorption 0.5→0.12, bonus 2.0→0.0. Ecologically realistic; no predation crashes observed. |
+
+### Remaining Issues
+| # | Issue | Root Cause | Fix Direction |
+|---|-------|------------|---------------|
+| 4 | MI near zero in both genomes | Environment too easy — sessile photosynthesis dominates. No pressure for sensory-driven behavior. | Make environment more dynamic: faster deposit relocation, seasonal disruptions |
+| 7 | CRN evolves away movement | Sessile strategy is strictly more efficient (saves 0.1/tick move cost). No fitness benefit to exploring. | Force movement necessity: relocate deposits more aggressively (every 5k ticks, 50%), or add spatially-varying hazards |
+| 8 | No predation evolves | With 12% absorption and no bonus, predation barely profitable. Prey density high enough that resources aren't scarce. | May need resource scarcity events to create competitive pressure |
+| 9 | Bond signals unused | CRN maps only 8 actions; bond signal outputs (10-13) are zeroed. Neural has signals but no evolutionary pressure to use them. | Needs functional multicellularity pressure first |
+| 10 | CRN crn_metrics logger partial | Zone means and biases show as 0 in analysis trajectory extraction (raw JSONL data is correct). | Fix key mapping in metrics extraction code |
+
+---
+
+## 11. Future Roadmap (Do Not Implement Yet)
 
 ### Phase 3: Expand CRN Substrate
-- Allow reaction count to grow beyond MAX_REACTIONS through duplication mutations (variable-length genome).
-- Add regulatory reactions: reactions that enable/disable other reactions based on chemical concentrations.
-- Add inter-cell reaction coupling: bond channels carry chemical concentrations, not just signal floats, enabling true chemical communication between bonded cells.
+- Variable-length genomes (reaction count grows via duplication).
+- Regulatory reactions (reactions enable/disable other reactions).
+- Inter-cell chemical coupling through bonds.
 
 ### Phase 4: Richer Environment
-- Expand terrain: elevation, biomes, water/land distinction.
-- Add weather events, seasonal cycles, resource boom-bust dynamics.
-- Add vibration/sound channel for long-range sensing.
-- Add spatial vision: cells can sense light in a cone in their facing direction, not just at their position. Multicellular organisms with multiple sensors gain superior spatial awareness.
+- Elevation, biomes, weather events, seasonal cycles.
+- Spatial vision (light cone sensing).
+- Vibration/sound channel for long-range sensing.
 
 ### Phase 5: LLM-Guided Environment Design
-- Connect the environment_api to an LLM that monitors OEE metrics.
-- LLM adjusts environment parameters to keep evolution in the productive zone.
-- LLM generates novel environmental challenges calibrated to organism capability.
-- Based on OMNI/OMNI-EPIC approach: foundation model as "model of interestingness."
-- **Critical constraint:** The LLM shapes the environment only. Never modifies organisms.
+- Connect env_api to LLM monitoring OEE metrics.
+- LLM adjusts environment to keep evolution productive.
+- Based on OMNI/OMNI-EPIC approach. LLM shapes environment only, never organisms.
 
-### Phase 6: Scale to RTX 5080 / Cloud
-- Port to CUDA. Increase world size. Target 1M+ cells.
-- Run the CRN vs neural network comparison at scale.
-- Run the monolithic-vs-compositional comparison: flatten best evolved multicellular organism into a single large network and compare performance.
+### Phase 6: Scale
+- Increase world size, target 1M+ cells.
+- CRN vs neural comparison at scale.
 
 ### Phase 7: Academic Contribution
-- Formalize the GNN interpretation of evolved multicellular organisms.
-- Publish the CRN-vs-NN comparison results.
-- Contribute to the open question: does compositional, modular, distributed intelligence have properties that monolithic intelligence lacks?
+- Formalize GNN interpretation of evolved multicellular organisms.
+- Publish CRN-vs-NN comparison results.
 
 ---
 
-## 9. Success Criteria (Updated)
+## 12. Success Criteria
 
-### Stage 1 — Ecosystem Viability (ACHIEVED):
-- Stable autotroph populations. Chemical cycling. Day/night behavioral shifts.
+### Stage 1 — Ecosystem Viability: ACHIEVED
+Stable populations, chemical cycling, day/night shifts.
 
-### Stage 2 — Behavioral Evolution (ACHIEVED):
-- Chemotaxis (38.6% movement fraction at 200k ticks). Multiple coexisting strategies. Stable carrying capacity (~800 cells neural).
+### Stage 2 — Behavioral Evolution: ACHIEVED
+Chemotaxis (30-45% movement), multiple strategies, stable carrying capacity.
 
-### Stage 3 — Ecological Complexity (PARTIALLY ACHIEVED):
-- Predation system functional (0.6% attack fraction neural, kill rewards working).
-- Bond dynamics fixed: degenerate chains eliminated by strength decay.
-- Bond signals active (88.7% nonzero for bonded cells).
-- Arms race dynamics not yet clearly visible — requires longer runs.
-- **Remaining:** Need stronger predator-prey oscillations and defensive clustering.
+### Stage 3 — Ecological Complexity: PARTIALLY ACHIEVED
+Predation economics fixed (ecologically realistic) but predation doesn't evolve (insufficient scarcity pressure). Bonds stable at 7-11% with auto-division bonds. Arms races not visible.
 
-### Stage 4 — Functional Multicellularity (IN PROGRESS):
-- Small bonded clusters (avg 2-5 cells) persist with active maintenance.
-- Bond signal infrastructure in place (4 channels, relay working).
-- **Remaining:** Context-dependent behavior within clusters not yet observed. Bond signal information content near zero (need longer evolution).
+### Stage 4 — Functional Multicellularity: IN PROGRESS
+Auto-bonds create clusters up to 22 cells with mesh/chain/star topologies. 94% facing coordination. But clusters are stationary, bond signals unused, and no behavioral differentiation. Needs environmental pressure that rewards group behavior.
 
-### Stage 5 — Sustained Open-Ended Evolution (INFRASTRUCTURE READY):
-- OEE metrics implemented and logging (Bedau activity, MODES, MI, entropy).
-- Archipelago maintains populations across quadrants (4/4 populated at 200k).
-- Plateau detection implemented.
-- **Remaining:** Need 1M+ tick runs to assess whether activity is truly unbounded.
+### Stage 5 — Sustained OEE: PROMISING
+CRN entropy rising (9.99→11.64) at 50k ticks, not plateaued. CRN root diversity 3x neural. But MI near zero — innovation is structural (new genomes), not behavioral (new strategies).
 
-### Stage 6 — Distributed Computation (FUTURE):
-- Bond signal channels provide bandwidth for inter-cell communication.
-- CRN genome provides memory substrate for temporal processing.
-- **Remaining:** All Stage 6 criteria require longer evolutionary timescales.
+### Stage 6 — Distributed Computation: FUTURE
+Requires multicellularity to stabilize first.
 
 ---
 
-## 10. What to Do If Evolution Stalls
+## 13. What to Do If Evolution Stalls
 
-In order of probability:
-
-1. **Energy balance is wrong.** Adjust photosynthesis_rate and basal_metabolism.
-2. **Mutation rate is wrong.** Try varying from 0.001 to 0.1.
-3. **Environment is too uniform.** Make resources patchier, increase GRADIENT_NOISE_SIGMA.
-4. **No diversity maintenance.** Enable archipelago if not already. Increase ISLAND_ENV_VARIANCE.
-5. **Division too easy or hard.** Adjust until division happens roughly every 500-1000 ticks for successful cells.
-6. **No competitive pressure.** Ensure resources are scarce. Seed predators if none evolve.
-7. **Computational substrate too limited.** If using neural network, switch to CRN. If CRN with 16 reactions isn't enough, increase MAX_REACTIONS to 32.
-8. **Bond channels too narrow.** Increase BOND_SIGNAL_WIDTH from 4 to 8 if multicellular communication seems bandwidth-limited.
-9. **Check OEE metrics.** If change metric is positive but complexity metric is flat, evolution is churning but not innovating. The environment likely needs a qualitative change (new resource type, new zone, catastrophic event).
+1. **Energy balance wrong.** Adjust PHOTOSYNTHESIS_RATE and BASAL_METABOLISM.
+2. **Mutation rate wrong.** Try 0.001 to 0.1.
+3. **Environment too uniform.** Patchier resources, more gradient noise.
+4. **No diversity.** Enable archipelago, increase ISLAND_ENV_VARIANCE or MIGRATION_COUNT.
+5. **Division too easy/hard.** Target ~500-1000 ticks between divisions for successful cells.
+6. **No competitive pressure.** Ensure scarcity. Seed predators if needed.
+7. **Substrate too limited.** Switch neural->CRN. If CRN with 16 reactions insufficient, try 32.
+8. **Check OEE.** If change is positive but complexity is flat, environment needs a qualitative shift.
 
 ---
 
-## 11. Testing Philosophy
+## 14. Testing
 
-Every subsystem must be testable in isolation:
+Run `python validate.py --ticks 30000` after significant changes. The harness tests population stability, bond dynamics, gradient noise, archipelago, predation, diversity, energy balance, cluster analysis, plus CRN-specific checks (hidden zone activation, reaction diversification).
 
-- **Conservation laws:** Total energy trackable. No energy appears from nowhere or vanishes.
-- **Determinism:** Same random seed → identical results.
-- **Boundary conditions:** Toroidal wrapping correct for cells, chemicals, and bonds.
-- **Edge cases:** Genome table full, division with no empty neighbors, energy going negative.
-- **CRN-specific:** Verify reactions fire correctly, chemical decay works, sensory coupling is accurate, action thresholds trigger at the right values.
-- **Bond-specific:** Verify bond decay, lossy transfer math, signal channel data flow, reciprocal bond consistency.
-- **Archipelago-specific:** Verify migration copies cells correctly, island environments are actually distinct, metrics are tracked per-island.
-
-Run the test suite after every significant change.
+Every subsystem must be testable in isolation: conservation laws, determinism, boundary conditions, edge cases.
 
 ---
 
-## 12. Key Research References
+## 15. References
 
-These papers informed the design decisions in this document. Consult them when making architectural choices.
-
-- **Flow-Lenia** (Plantec et al., 2025): Mass conservation enables multi-species CA. Informed our chemical conservation approach.
-- **Sensorimotor Lenia** (Hamon et al., 2025): ~130 parameters produce genuine agency from local rules. Informed our CRN compactness target.
-- **ASAL** (Kumar et al., NeurIPS 2024): Foundation models automate ALife discovery. Informed our LLM environment design plans.
-- **OMNI-EPIC** (Zhang et al., ICLR 2025): FM-generated environments achieve "Darwin Completeness." Informed our environment API design.
-- **GReaNs** (Wróbel & Joachimczak): Single encoding produces both GRN and neural computation. Informed our hybrid substrate approach.
-- **Schramm et al.**: Single GRN controls both morphogenesis and locomotion. Key motivation for CRN genome.
-- **Dolson et al. (MODES)**: Formal OEE metrics. Directly implemented in Step 14.
-- **ProtoEvo** (Cope, ALIFE 2023): Multicellular evolution with gene regulation. Closest existing project to ours.
-- **TensorNEAT** (2024): GPU-accelerated NEAT. Reference for potential neural genome upgrade.
-- **Chromaria** (Soros & Stanley, 2014): Niche construction sustains novelty. Informed our archipelago + migration design.
+- **Flow-Lenia** (Plantec et al., 2025): Mass conservation in CA. Informed chemical conservation.
+- **Sensorimotor Lenia** (Hamon et al., 2025): ~130 params produce agency. Informed CRN compactness.
+- **OMNI-EPIC** (Zhang et al., ICLR 2025): FM-generated environments. Informed env API design.
+- **GReaNs** (Wrobel & Joachimczak): Single encoding for GRN + neural. Informed hybrid substrate.
+- **Dolson et al. (MODES)**: Formal OEE metrics. Directly implemented.
+- **ProtoEvo** (Cope, ALIFE 2023): Multicellular evolution with gene regulation. Closest existing project.
+- **Chromaria** (Soros & Stanley, 2014): Niche construction sustains novelty. Informed archipelago design.
 
 ---
 
-## Summary for Claude Code Planning
+## Summary for Claude Code
 
-1. Steps 1-14 are complete. All research-informed upgrades are implemented on `feature/research-upgrades`.
-2. Neural network genome is the stable default. CRN genome works but needs further tuning (low carrying capacity, high attack rate).
-3. **Priority CRN improvements:** Reduce attack auto-firing, improve movement/chemotaxis, expand action mapping beyond 8 chemicals to cover bond signals and repair.
-4. **Next milestone:** Run 1M+ tick simulations to assess OEE metric trajectories and whether evolution is genuinely open-ended.
-5. Keep the neural network genome as a comparison baseline. Never delete it.
-6. Keep every module under 300 lines.
-7. Run `python validate.py --ticks 30000` after significant changes to verify nothing is broken.
-8. When in doubt about a design decision, ask: "Does this make the fitness landscape smoother (good) or more rugged (bad)?" and "Does this maintain diversity or reduce it?"
-9. Use `python analysis/compare_runs.py --latest` to compare recent long runs.
+1. Steps 1-14 complete. Six critical issues (v4.0) fixed. CRN genome now viable and outperforms neural in population (3x) and diversity.
+2. CRN is the primary genome for pushing complexity. Neural is the comparison baseline — never delete it.
+3. **Immediate priority:** Break the sessile optimum. The environment is too easy — photosynthesis in the bright zone is so profitable that movement, predation, and cooperation provide no fitness advantage. More dynamic deposit relocation or seasonal disruptions needed.
+4. **Secondary priority:** Run CRN to 200k ticks to see if complexity increases beyond the 50k snapshot. Entropy is still rising.
+5. Keep modules under 300 lines.
+6. Run `python validate.py --ticks 30000` after changes. Run `python analysis/run_all.py` for full analysis.
+7. Config values in `config.py` are the source of truth — this document may lag behind.
+8. Design question: "Does this create pressure for complex behavior, or can a simple strategy still win?"

@@ -165,36 +165,40 @@ def compute_root_diversity(events: list[dict], parent_of: dict,
 # ---------------------------------------------------------------------------
 
 def extract_output_biases(genome_snapshots: list[tuple[int, dict]],
-                          lineage_chain: list[int]) -> tuple[list[int], np.ndarray]:
+                          lineage_chain: list[int]):
     """Extract output layer biases for a lineage chain across snapshots.
 
-    Returns (ticks, biases) where biases is shape (n_snapshots, 10).
+    Returns (ticks, biases, is_crn).
+    For neural: biases shape (n_snapshots, 10..14).
+    For CRN: biases shape (n_snapshots, 8) — 4 action biases + 4 hidden decays.
     """
-    # Import layout offsets
-    try:
-        from config import W3_END, B3_END
-    except ImportError:
-        W3_END, B3_END = 1920, 1930
-
     chain_set = set(lineage_chain)
     ticks = []
     biases = []
+    is_crn = False
 
     for tick, snap in genome_snapshots:
         gids = snap["genome_ids"]
         weights = snap["weights"]
-        # Find intersection of chain genomes and snapshot genomes
+        if weights.shape[1] <= 120:
+            is_crn = True
         for i, gid in enumerate(gids):
             if int(gid) in chain_set:
-                # Extract output biases (last layer)
-                bias = weights[i, W3_END:B3_END]
+                if is_crn:
+                    bias = weights[i, 112:120]
+                else:
+                    try:
+                        from config import W3_END, B3_END
+                    except ImportError:
+                        W3_END, B3_END = 2624, 2638
+                    bias = weights[i, W3_END:B3_END]
                 ticks.append(tick)
                 biases.append(bias)
-                break  # one representative per snapshot
+                break
 
     if not biases:
-        return [], np.empty((0, 10))
-    return ticks, np.array(biases)
+        return [], np.empty((0, 0)), is_crn
+    return ticks, np.array(biases), is_crn
 
 
 # ---------------------------------------------------------------------------
@@ -304,24 +308,42 @@ def plot_lineage_analysis(events, parent_of, children, surviving,
 
     # Panel 5: Output bias evolution for longest lineage
     ax = fig.add_subplot(gs[2, 0])
-    ax.set_title("Output bias evolution (longest lineage)", fontsize=11)
     if top_chains and genome_snapshots:
         longest = top_chains[0]
-        bias_ticks, biases = extract_output_biases(genome_snapshots, longest)
+        bias_ticks, biases, is_crn = extract_output_biases(
+            genome_snapshots, longest)
         if len(bias_ticks) > 0:
-            key_actions = [0, 3, 5, 8, 6]  # move, eat, divide, attack, bond
-            colors = ["#1565c0", "#2e7d32", "#6a1b9a", "#e53935", "#ff8f00"]
-            for idx, action_i in enumerate(key_actions):
-                ax.plot([t/1000 for t in bias_ticks], biases[:, action_i],
-                        "-o", ms=3, linewidth=1, color=colors[idx],
-                        label=ACTION_NAMES[action_i])
+            if is_crn:
+                ax.set_title("CRN bias evolution (longest lineage)",
+                             fontsize=11)
+                crn_names = ["eat_bias", "move_bias", "divide_bias",
+                             "attack_bias", "h8_decay", "h9_decay",
+                             "h10_decay", "h11_decay"]
+                crn_colors = ["#2e7d32", "#1565c0", "#6a1b9a", "#e53935",
+                              "#FF9800", "#FFB74D", "#FFA726", "#FF8F00"]
+                for idx in range(min(8, biases.shape[1])):
+                    ax.plot([t/1000 for t in bias_ticks], biases[:, idx],
+                            "-o", ms=3, linewidth=1, color=crn_colors[idx],
+                            label=crn_names[idx])
+            else:
+                ax.set_title("Output bias evolution (longest lineage)",
+                             fontsize=11)
+                key_actions = [0, 3, 5, 8, 6]
+                colors = ["#1565c0", "#2e7d32", "#6a1b9a", "#e53935",
+                          "#ff8f00"]
+                for idx, action_i in enumerate(key_actions):
+                    ax.plot([t/1000 for t in bias_ticks],
+                            biases[:, action_i],
+                            "-o", ms=3, linewidth=1, color=colors[idx],
+                            label=ACTION_NAMES[action_i])
             ax.set_xlabel("Ticks (thousands)")
-            ax.set_ylabel("Output bias value")
+            ax.set_ylabel("Bias / decay value")
             ax.legend(fontsize=7, loc="best")
         else:
             ax.text(0.5, 0.5, "No weight snapshots overlap lineage",
                     transform=ax.transAxes, ha="center", va="center")
     else:
+        ax.set_title("Output bias evolution (longest lineage)", fontsize=11)
         ax.text(0.5, 0.5, "No lineage or weight data",
                 transform=ax.transAxes, ha="center", va="center")
     ax.grid(True, alpha=0.3)

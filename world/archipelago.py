@@ -120,12 +120,9 @@ def migrate_cells():
         possible_dests = [q for q in range(NUM_ISLANDS) if q != src_island]
         dst_island = _rng.choice(possible_dests)
 
-        # Select migrants proportional to energy
-        energies = np.array([energy_np[c] for c in src_cells], dtype=np.float64)
-        energies = np.maximum(energies, 0.01)  # avoid zero weights
-        probs = energies / energies.sum()
+        # Select migrants randomly (uniform — avoids accelerating selective sweeps)
         migrant_indices = _rng.choice(len(src_cells), size=MIGRATION_COUNT,
-                                       replace=False, p=probs)
+                                       replace=False)
 
         # Destination quadrant bounds
         dst_ix = dst_island % 2

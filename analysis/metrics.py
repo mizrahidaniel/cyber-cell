@@ -129,19 +129,29 @@ def get_spatial_snapshot() -> dict:
 
 def get_genome_weight_snapshot() -> dict:
     """Capture weights, lineage, and ref counts for all active genomes."""
+    from config import GENOME_TYPE
+
     refs = genome_ref_count.to_numpy()
     active_mask = refs > 0
     active_ids = np.where(active_mask)[0].astype(np.int32)
 
+    if GENOME_TYPE == "crn":
+        from cell.crn_genome import crn_weights
+        from config import CRN_GENOME_SIZE
+        gs = CRN_GENOME_SIZE
+        all_w = crn_weights.to_numpy()
+    else:
+        gs = GENOME_SIZE
+        all_w = genome_weights.to_numpy()
+
     if len(active_ids) == 0:
         return {"genome_ids": np.empty(0, dtype=np.int32),
-                "weights": np.empty((0, GENOME_SIZE), dtype=np.float32),
+                "weights": np.empty((0, gs), dtype=np.float32),
                 "ref_counts": np.empty(0, dtype=np.int32),
                 "parent_ids": np.empty(0, dtype=np.int32),
                 "birth_ticks": np.empty(0, dtype=np.int32)}
 
-    all_weights = genome_weights.to_numpy()
-    weights = all_weights[active_ids]
+    weights = all_w[active_ids]
     ref_counts = refs[active_ids]
     parent_ids = genome_parent_id.to_numpy()[active_ids]
     birth_ticks = genome_birth_tick.to_numpy()[active_ids]
@@ -213,4 +223,104 @@ def get_predation_stats() -> dict:
         "bond_fraction": float(bonded_cells / count),
         "deaths_by_attack": d_attack,
         "deaths_by_starvation": d_starve,
+    }
+
+
+def get_crn_snapshot() -> dict | None:
+    """Extract CRN internal state for diagnostics. Returns None if not CRN."""
+    from config import GENOME_TYPE
+    if GENOME_TYPE != "crn":
+        return None
+
+    from config import (
+        NUM_INTERNAL_CHEMICALS, NUM_SENSORY_CHEMICALS, NUM_HIDDEN_CHEMICALS,
+        NUM_ACTION_CHEMICALS, MAX_REACTIONS, CRN_PARAMS_PER_REACTION,
+    )
+    from cell.crn_genome import crn_chemicals, crn_weights
+
+    NC = NUM_INTERNAL_CHEMICALS    # 16
+    NS = NUM_SENSORY_CHEMICALS     # 8
+    NH = NUM_HIDDEN_CHEMICALS      # 4
+    NA = NUM_ACTION_CHEMICALS      # 4
+    MR = MAX_REACTIONS             # 16
+    PPR = CRN_PARAMS_PER_REACTION  # 7
+    REACT_END = MR * PPR           # 112
+
+    alive = cell_alive.to_numpy() == 1
+    count = int(alive.sum())
+    if count == 0:
+        return None
+
+    chems = crn_chemicals.to_numpy()[:MAX_CELLS][alive]
+    gids = cell_genome_id.to_numpy()[alive]
+    weights = crn_weights.to_numpy()
+
+    # Zone activation means
+    sensory_mean = float(chems[:, :NS].mean())
+    hidden_mean = float(chems[:, NS:NS + NH].mean())
+    action_mean = float(chems[:, NS + NH:].mean())
+
+    # Per-chemical stats
+    chem_means = [float(chems[:, c].mean()) for c in range(NC)]
+    chem_stds = [float(chems[:, c].std()) for c in range(NC)]
+
+    # Population-weighted genome stats
+    unique_gids, gid_counts = np.unique(gids, return_counts=True)
+    total = float(gid_counts.sum())
+    bias_w = np.zeros(NA)
+    decay_w = np.zeros(NH)
+    active_w = 0.0
+    inv_count, inv_total = 0, 0
+
+    for j, gid in enumerate(unique_gids):
+        g, frac = int(gid), gid_counts[j] / total
+        for a in range(NA):
+            bias_w[a] += weights[g, REACT_END + a] * frac
+        for h in range(NH):
+            decay_w[h] += abs(weights[g, REACT_END + NA + h]) * frac
+        active = sum(1 for r in range(MR) if abs(weights[g, r * PPR + 5]) > 0.001)
+        active_w += active * frac
+        for r in range(MR):
+            for ti in (3, 4):
+                inv_total += 1
+                if weights[g, r * PPR + ti] < 0:
+                    inv_count += 1
+
+    # Dominant genome reaction topology
+    dom_idx = int(np.argmax(gid_counts))
+    dom_gid = int(unique_gids[dom_idx])
+    dw = weights[dom_gid]
+    zone_flow = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
+    dom_reactions = []
+
+    def _zone(c):
+        return 0 if c < NS else (1 if c < NS + NH else 2)
+
+    for r in range(MR):
+        base = r * PPR
+        inp_a = int(abs(dw[base]) * NC) % NC
+        inp_b = int(abs(dw[base + 1]) * NC) % NC
+        out = int(abs(dw[base + 2]) * NC) % NC
+        rate = float(dw[base + 5])
+        dom_reactions.append({
+            "input_a": inp_a, "input_b": inp_b, "output": out,
+            "threshold_a": float(dw[base + 3]),
+            "threshold_b": float(dw[base + 4]),
+            "rate": rate, "decay": float(dw[base + 6]),
+        })
+        if abs(rate) > 0.001:
+            zone_flow[max(_zone(inp_a), _zone(inp_b))][_zone(out)] += 1
+
+    return {
+        "sensory_mean": sensory_mean, "hidden_mean": hidden_mean,
+        "action_mean": action_mean,
+        "chem_means": chem_means, "chem_stds": chem_stds,
+        "bias_mean": bias_w.tolist(), "decay_mean": decay_w.tolist(),
+        "active_reactions": float(active_w),
+        "inverted_threshold_frac": float(inv_count / max(1, inv_total)),
+        "zone_flow": zone_flow,
+        "dominant_gid": dom_gid,
+        "dominant_count": int(gid_counts[dom_idx]),
+        "dominant_reactions": dom_reactions,
+        "num_active_genomes": len(unique_gids),
     }
