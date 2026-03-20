@@ -150,6 +150,26 @@ BOND_SIGNAL_CHANNELS = 4         # number of signal floats per bond direction
 R_LIGHT_ZONE_FRACTION = 0.15    # fraction of R deposits placed in the light zone
 
 # =============================================================================
+# Genome type selection
+# =============================================================================
+GENOME_TYPE = "neural"           # "neural" or "crn"
+
+# =============================================================================
+# CRN Genome (Chemical Reaction Network)
+# =============================================================================
+NUM_INTERNAL_CHEMICALS = 8
+MAX_REACTIONS = 16
+# Per reaction: input_a, input_b, output, threshold_a, threshold_b, rate, decay
+CRN_PARAMS_PER_REACTION = 7
+CRN_GENOME_SIZE = MAX_REACTIONS * CRN_PARAMS_PER_REACTION  # 112
+CRN_MUTATION_RATE_PERTURB = 0.02
+CRN_MUTATION_SIGMA = 0.1
+CRN_MUTATION_RATE_DUPLICATE = 0.005
+CRN_MUTATION_RATE_DELETE = 0.005
+CRN_MUTATION_RATE_REWIRE = 0.01
+CRN_ACTION_THRESHOLD = 0.5
+
+# =============================================================================
 # Visualization
 # =============================================================================
 GUI_SCALE = 1

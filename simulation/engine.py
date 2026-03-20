@@ -10,6 +10,7 @@ import numpy as np
 from config import (
     GENOME_GC_INTERVAL, RANDOM_SEED, SNAPSHOT_INTERVAL,
     DEPOSIT_RELOCATE_INTERVAL, ARCHIPELAGO_ENABLED, MIGRATION_INTERVAL,
+    GENOME_TYPE,
 )
 
 from world.grid import compute_light, init_grid
@@ -68,7 +69,13 @@ class SimulationEngine:
         init_grid()
         init_chemistry()
         init_cell_state()
-        init_genome_table()
+
+        if GENOME_TYPE == "crn":
+            from cell.crn_genome import init_crn_genome_table
+            init_crn_genome_table()
+        else:
+            init_genome_table()
+
         seed_cells()
 
         if ARCHIPELAGO_ENABLED:
@@ -177,7 +184,11 @@ class SimulationEngine:
 
         # 3. Sense -> Think -> Act
         compute_sensory_inputs(env_S, env_R, env_G)
-        evaluate_all_networks()
+        if GENOME_TYPE == "crn":
+            from cell.crn_genome import evaluate_all_crns
+            evaluate_all_crns()
+        else:
+            evaluate_all_networks()
 
         clear_intentions()
         process_turns()
@@ -198,7 +209,11 @@ class SimulationEngine:
         # 4. Division
         process_divide_phase1()
         process_divide_phase2()
-        process_mutations(self.mutation_rng, self.tick_count)
+        if GENOME_TYPE == "crn":
+            from cell.crn_genome import process_crn_mutations
+            process_crn_mutations(self.tick_count)
+        else:
+            process_mutations(self.mutation_rng, self.tick_count)
 
         # Log lineage events
         if self.logger:
