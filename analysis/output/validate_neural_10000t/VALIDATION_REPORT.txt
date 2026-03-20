@@ -1,0 +1,33 @@
+VALIDATION REPORT — 10,000 ticks (NEURAL genome)
+Date: 2026-03-19 23:54:45
+Seed: 42  Archipelago: True
+Result: 14/14 passed
+
+  [PASS] Population survives
+         final=487, min=394, peak=2000
+  [PASS] No catastrophic crash (<95% loss)
+         initial=2000, min=394
+  [PASS] Bond strength decay working (8a)
+         mean=0.829, std=0.295, n=9173
+  [PASS] Lossy transfer doesn't crash bonded cells (8b)
+         86 bonded cells alive at end
+  [PASS] Bond signals active for bonded cells (8c)
+         9333/16138 checks had nonzero signals (57.8%)
+  [PASS] Gradient noise applied (9a)
+         mean gradient variance=0.1053
+  [PASS] Archipelago: cells in multiple quadrants (10)
+         quadrant pops: [388, 0, 99, 0], 2/4 populated
+  [PASS] Predation system active (11)
+         attack deaths: 444, starvation deaths: 9764 [kill rewards detected]
+  [PASS] Genome diversity maintained
+         final=1728, peak=2307
+  [PASS] No degenerate chains (8a goal)
+         20 clusters, avg=5.0, max=34, degenerate(>10)=2
+  [PASS] Healthy energy levels
+         avg energy (last samples)=129.18
+  [PASS] Light attenuation working
+         avg effective light=0.213, avg local density=11.9
+  [PASS] Waste system active
+         avg waste at cells=0.2078 (target >0)
+  [PASS] Waste not runaway
+         peak waste=1.11 (target <50)

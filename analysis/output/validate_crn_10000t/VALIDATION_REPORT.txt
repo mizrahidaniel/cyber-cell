@@ -1,0 +1,39 @@
+VALIDATION REPORT — 10,000 ticks (CRN genome)
+Date: 2026-03-19 23:10:01
+Seed: 42  Archipelago: True
+Result: 16/17 passed
+
+  [PASS] Population survives
+         final=121, min=78, peak=1697
+  [PASS] No catastrophic crash (<95% loss)
+         initial=1021, min=78
+  [PASS] Bond strength decay working (8a)
+         mean=0.415, std=0.416, n=520
+  [PASS] Lossy transfer doesn't crash bonded cells (8b)
+         0 bonded cells alive at end
+  [PASS] Bond signals active for bonded cells (8c)
+         N/A for CRN genome (8 actions, no bond signal outputs)
+  [PASS] Gradient noise applied (9a)
+         mean gradient variance=0.0283
+  [PASS] Archipelago: cells in multiple quadrants (10)
+         quadrant pops: [54, 1, 61, 5], 4/4 populated
+  [PASS] Predation system active (11)
+         attack deaths: 144, starvation deaths: 1930
+  [PASS] Genome diversity maintained
+         final=121, peak=2015
+  [PASS] No degenerate chains (8a goal)
+         no bonded clusters formed
+  [PASS] Healthy energy levels
+         avg energy (last samples)=151.36
+  [PASS] Light attenuation working
+         avg effective light=0.273, avg local density=0.5
+  [FAIL] CRN: Population > 200
+         final_pop=121 (target >200)
+  [PASS] CRN: Movement circuit works
+         early avg=0.179, overall=0.042 (target: early >0.05)
+  [PASS] CRN: Attack < 5%
+         avg=0.000 (target <0.05)
+  [PASS] CRN: Hidden chemicals active
+         peak hidden zone mean=0.4951 (target >0.01)
+  [PASS] CRN: Reactions diversified
+         dominant genome has 16 active reactions (target >=5)
