@@ -184,6 +184,42 @@ def get_burst_spatial_snapshot() -> dict:
             "energies": energies, "ages": ages}
 
 
+def get_light_attenuation_stats() -> dict:
+    """Compute light attenuation statistics at occupied cell positions."""
+    from config import LIGHT_ATTENUATION_ENABLED
+    if not LIGHT_ATTENUATION_ENABLED:
+        return {}
+
+    from world.grid import local_density, light_field
+
+    alive = cell_alive.to_numpy() == 1
+    count = int(alive.sum())
+
+    if count == 0:
+        return {
+            "avg_effective_light": 0.0,
+            "avg_local_density": 0.0,
+            "max_local_density": 0,
+            "density_gt5_frac": 0.0,
+        }
+
+    xs = cell_x.to_numpy()[alive]
+    ys = cell_y.to_numpy()[alive]
+
+    density_np = local_density.to_numpy()
+    light_np = light_field.to_numpy()
+
+    cell_densities = density_np[xs, ys]
+    cell_lights = light_np[xs, ys]
+
+    return {
+        "avg_effective_light": float(cell_lights.mean()),
+        "avg_local_density": float(cell_densities.mean()),
+        "max_local_density": int(cell_densities.max()),
+        "density_gt5_frac": float((cell_densities > 5).mean()),
+    }
+
+
 def get_predation_stats() -> dict:
     """Compute predation and bonding metrics for Stage 3 detection."""
     alive = cell_alive.to_numpy() == 1

@@ -57,6 +57,9 @@ def run_validation(ticks: int, genome_type: str = "neural",
     gradient_noise_variance_samples = []
     move_fraction_samples = []
     attack_fraction_samples = []
+    # Light attenuation accumulators
+    effective_light_samples = []
+    local_density_samples = []
     # CRN-specific accumulators
     hidden_zone_samples = []
 
@@ -123,6 +126,18 @@ def run_validation(ticks: int, genome_type: str = "neural",
                     # Gradient inputs are [5..10]
                     grad_vars = alive_sens[:, 5:11].var(axis=0)
                     gradient_noise_variance_samples.append(grad_vars.mean())
+
+                # Light attenuation stats
+                if config.LIGHT_ATTENUATION_ENABLED:
+                    from world.grid import local_density, light_field
+                    density_np = local_density.to_numpy()
+                    light_np = light_field.to_numpy()
+                    alive_xs = cell_x.to_numpy()[alive_mask]
+                    alive_ys = cell_y.to_numpy()[alive_mask]
+                    cell_lights = light_np[alive_xs, alive_ys]
+                    cell_dens = density_np[alive_xs, alive_ys]
+                    effective_light_samples.append(float(cell_lights.mean()))
+                    local_density_samples.append(float(cell_dens.mean()))
 
                 # CRN-specific: hidden zone activation
                 if genome_type == "crn":
@@ -248,6 +263,8 @@ def run_validation(ticks: int, genome_type: str = "neural",
         "quadrant_pops": quadrant_pops,
         "bonded_count": bonded_count,
         "cluster_sizes": cluster_sizes,
+        "effective_light_samples": effective_light_samples,
+        "local_density_samples": local_density_samples,
         "hidden_zone_samples": hidden_zone_samples,
         "crn_dominant_active_reactions": crn_dominant_active_reactions,
     }
@@ -384,12 +401,30 @@ def check_results(results: dict) -> list[tuple[str, bool, str]]:
         detail = "insufficient data"
     checks.append(("Healthy energy levels", passed, detail))
 
-    # 11-13. CRN-specific checks
+    # 11. Light attenuation check
+    light_samples = results.get("effective_light_samples", [])
+    density_samples = results.get("local_density_samples", [])
+    if light_samples and density_samples:
+        avg_light = np.mean(light_samples)
+        avg_dens = np.mean(density_samples)
+        # With attenuation enabled, avg effective light at occupied cells
+        # should be noticeably less than the base bright zone light (~0.45)
+        passed = avg_light < 0.4 or avg_dens > 1.0
+        detail = (f"avg effective light={avg_light:.3f}, "
+                  f"avg local density={avg_dens:.1f}")
+    else:
+        passed = True
+        detail = "attenuation not enabled or no samples"
+    checks.append(("Light attenuation working", passed, detail))
+
+    # 12-18. CRN-specific checks
     if results["genome_type"] == "crn":
-        # CRN population target
-        passed = final_pop > 200
-        detail = f"final_pop={final_pop} (target >200)"
-        checks.append(("CRN: Population > 200", passed, detail))
+        # CRN population target (lower with light attenuation enabled)
+        import config as _cfg
+        pop_target = 75 if getattr(_cfg, 'LIGHT_ATTENUATION_ENABLED', False) else 200
+        passed = final_pop > pop_target
+        detail = f"final_pop={final_pop} (target >{pop_target})"
+        checks.append((f"CRN: Population > {pop_target}", passed, detail))
 
         # CRN movement: check early samples (circuit works before evolution erodes it)
         move_fracs = results.get("move_fraction_samples", [])

@@ -40,6 +40,13 @@ DEPOSIT_RELOCATE_INTERVAL = 25000 # ticks between partial deposit relocation
 DEPOSIT_RELOCATE_FRACTION = 0.2   # fraction of deposits relocated each interval
 
 # =============================================================================
+# Light Attenuation (Beer-Lambert density-dependent shading)
+# =============================================================================
+LIGHT_ATTENUATION_ENABLED = True
+LIGHT_ATTENUATION_K = 0.03      # extinction coefficient per neighbor (74% at density 10, 55% at density 20)
+LIGHT_ATTENUATION_RADIUS = 2    # neighborhood radius for density count
+
+# =============================================================================
 # Archipelago (soft-wall quadrant partitioning)
 # =============================================================================
 ARCHIPELAGO_ENABLED = True
@@ -96,7 +103,7 @@ R_ENERGY_VALUE = 0.5
 EAT_ABSORB_CAP = 2.0          # max chemical absorbed per eat action per tick
 PASSIVE_EAT_CAP = 0.05        # max chemical absorbed passively per tick (no neural net)
 ATTACK_MEMBRANE_DAMAGE = 8.0
-KILL_ABSORPTION_RATE = 0.12       # fraction of victim's chemicals absorbed by killer (~10-15% ecological realism)
+KILL_ABSORPTION_RATE = 0.35       # fraction of victim's chemicals absorbed by killer (~3 kills to recoup prey lifetime)
 KILL_ENERGY_BONUS = 0.0           # no flat bonus — predation profit comes from absorption only
 
 # =============================================================================

@@ -11,9 +11,10 @@ from config import (
     GENOME_GC_INTERVAL, RANDOM_SEED, SNAPSHOT_INTERVAL,
     DEPOSIT_RELOCATE_INTERVAL, ARCHIPELAGO_ENABLED, MIGRATION_INTERVAL,
     GENOME_TYPE, MIN_POPULATION, RESPAWN_INTERVAL,
+    LIGHT_ATTENUATION_ENABLED,
 )
 
-from world.grid import compute_light, init_grid
+from world.grid import compute_light, init_grid, compute_local_density, apply_light_attenuation
 from world.chemistry import (
     diffuse_all, replenish_deposits, swap_buffers, init_chemistry,
     get_env_S, get_env_R, get_env_G,
@@ -53,7 +54,7 @@ _CACHE_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)),
 
 class SimulationEngine:
     def __init__(self, headless: bool = False, log_interval: int = 1000,
-                 backend: str = "cpu", auto_switch: bool = True):
+                 backend: str = "cuda", auto_switch: bool = False):
         self.headless = headless
         self.log_interval = log_interval
         self.tick_count = 0
@@ -177,6 +178,9 @@ class SimulationEngine:
         """Execute one simulation tick."""
         # 1. Update environment
         compute_light(self.tick_count)
+        if LIGHT_ATTENUATION_ENABLED:
+            compute_local_density()
+            apply_light_attenuation()
         diffuse_all()
         replenish_deposits()
 
