@@ -95,12 +95,12 @@ GRADIENT_SCALE_R = 5.0        # amplify R gradient for neural network input
 ACTION_THRESHOLD = 0.5
 
 # Weight layout offsets
-W1_END = NUM_INPUTS * NETWORK_HIDDEN_SIZE                    # 512
-B1_END = W1_END + NETWORK_HIDDEN_SIZE                        # 544
-W2_END = B1_END + NETWORK_HIDDEN_SIZE * NETWORK_HIDDEN_SIZE  # 1568
-B2_END = W2_END + NETWORK_HIDDEN_SIZE                        # 1600
-W3_END = B2_END + NETWORK_HIDDEN_SIZE * NUM_OUTPUTS           # 1920
-B3_END = W3_END + NUM_OUTPUTS                                # 1930
+W1_END = NUM_INPUTS * NETWORK_HIDDEN_SIZE                    # 576
+B1_END = W1_END + NETWORK_HIDDEN_SIZE                        # 608
+W2_END = B1_END + NETWORK_HIDDEN_SIZE * NETWORK_HIDDEN_SIZE  # 1632
+B2_END = W2_END + NETWORK_HIDDEN_SIZE                        # 1664
+W3_END = B2_END + NETWORK_HIDDEN_SIZE * NUM_OUTPUTS           # 1984
+B3_END = W3_END + NUM_OUTPUTS                                # 1994
 
 # =============================================================================
 # Mutation
