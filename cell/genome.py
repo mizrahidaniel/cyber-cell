@@ -101,6 +101,10 @@ def init_genome_table(count: int = INITIAL_CELL_COUNT, seed: int = RANDOM_SEED):
          0.0,          # 7: unbond
          ATTACK_BIAS,  # 8: attack — suppressed but reachable by 1-2 mutations
          0.0,          # 9: repair
+         0.0,          # 10: bond_signal_0
+         0.0,          # 11: bond_signal_1
+         0.0,          # 12: bond_signal_2
+         0.0,          # 13: bond_signal_3
     ], dtype=np.float32)
 
     for g in range(count):

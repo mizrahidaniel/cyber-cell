@@ -1,14 +1,18 @@
-"""Bonding system: mutual bond formation, unilateral unbonding, and chemical sharing."""
+"""Bonding system: mutual bond formation, strength decay, lossy sharing,
+bond signal relay, unbonding, and bonded group movement."""
 
 import taichi as ti
 
 from config import (
     MAX_CELLS, GRID_WIDTH, GRID_HEIGHT, ACTION_THRESHOLD,
     BOND_COST, BOND_SHARE_RATE, MOVE_COST,
+    BOND_INITIAL_STRENGTH, BOND_DECAY_RATE, BOND_REINFORCE_RATE,
+    BOND_BREAK_THRESHOLD, BOND_TRANSFER_LOSS, BOND_SIGNAL_CHANNELS,
 )
 from cell.cell_state import (
     cell_alive, cell_x, cell_y, cell_energy, cell_structure, cell_repmat,
-    cell_signal, cell_facing, cell_bonds, grid_cell_id,
+    cell_signal, cell_facing, cell_bonds, cell_bond_strength,
+    cell_bond_signal_out, cell_bond_signal_in, grid_cell_id,
 )
 from cell.genome import action_outputs
 from cell.sensing import facing_offset
@@ -35,7 +39,6 @@ def process_bond_phase1():
                 by = (cell_y[i] + offset[1] + GRID_HEIGHT) % GRID_HEIGHT
                 target = grid_cell_id[bx, by]
                 if target >= 0 and cell_alive[target] == 1:
-                    # Claim: write our index at target's position
                     ti.atomic_min(grid_bond_claim[bx, by], i)
 
 
@@ -45,13 +48,10 @@ def process_bond_phase2():
     for i in range(MAX_CELLS):
         if cell_alive[i] == 1 and action_outputs[i, 6] > ACTION_THRESHOLD:
             if cell_energy[i] >= BOND_COST:
-                # Check if someone claimed our position
                 claimer = grid_bond_claim[cell_x[i], cell_y[i]]
                 if claimer < MAX_CELLS and claimer != i and cell_alive[claimer] == 1:
-                    # Verify claimer is adjacent to us
                     dx = cell_x[claimer] - cell_x[i]
                     dy = cell_y[claimer] - cell_y[i]
-                    # Handle toroidal wrapping
                     if dx > GRID_WIDTH // 2:
                         dx -= GRID_WIDTH
                     if dx < -(GRID_WIDTH // 2):
@@ -62,13 +62,11 @@ def process_bond_phase2():
                         dy += GRID_HEIGHT
                     dist = ti.abs(dx) + ti.abs(dy)
                     if dist == 1:
-                        # Check not already bonded to this cell
                         already_bonded = 0
                         for b in range(4):
                             if cell_bonds[i, b] == claimer:
                                 already_bonded = 1
                         if already_bonded == 0:
-                            # Find empty bond slots for both
                             my_slot = -1
                             for b in range(4):
                                 if cell_bonds[i, b] == -1 and my_slot == -1:
@@ -80,8 +78,61 @@ def process_bond_phase2():
                             if my_slot >= 0 and their_slot >= 0:
                                 cell_bonds[i, my_slot] = claimer
                                 cell_bonds[claimer, their_slot] = i
+                                cell_bond_strength[i, my_slot] = BOND_INITIAL_STRENGTH
+                                cell_bond_strength[claimer, their_slot] = BOND_INITIAL_STRENGTH
                                 cell_energy[i] -= BOND_COST
                                 cell_energy[i] = ti.max(0.0, cell_energy[i])
+
+
+@ti.kernel
+def process_bond_strength_update():
+    """Update bond strengths: reinforce if both cells fire bond, decay otherwise.
+    Auto-break bonds that fall below threshold."""
+    for i in range(MAX_CELLS):
+        if cell_alive[i] == 1:
+            for b in range(4):
+                partner = cell_bonds[i, b]
+                if partner >= 0 and cell_alive[partner] == 1:
+                    # Only update from lower-index side to avoid double processing
+                    if i < partner:
+                        # Check if both cells are firing bond output
+                        i_bonds = action_outputs[i, 6] > ACTION_THRESHOLD
+                        p_bonds = action_outputs[partner, 6] > ACTION_THRESHOLD
+
+                        # Find partner's bond slot pointing back to us
+                        p_slot = -1
+                        for pb in range(4):
+                            if cell_bonds[partner, pb] == i:
+                                p_slot = pb
+
+                        if p_slot >= 0:
+                            # Use the lower of the two strengths as the shared value
+                            strength = ti.min(cell_bond_strength[i, b],
+                                              cell_bond_strength[partner, p_slot])
+
+                            if i_bonds and p_bonds:
+                                strength += BOND_REINFORCE_RATE
+                            else:
+                                strength -= BOND_DECAY_RATE
+
+                            strength = ti.min(1.0, ti.max(0.0, strength))
+
+                            if strength < BOND_BREAK_THRESHOLD:
+                                # Break bond
+                                cell_bonds[i, b] = -1
+                                cell_bond_strength[i, b] = 0.0
+                                cell_bonds[partner, p_slot] = -1
+                                cell_bond_strength[partner, p_slot] = 0.0
+                                # Clear signal channels
+                                for ch in range(BOND_SIGNAL_CHANNELS):
+                                    cell_bond_signal_out[i, b, ch] = 0.0
+                                    cell_bond_signal_in[i, b, ch] = 0.0
+                                    cell_bond_signal_out[partner, p_slot, ch] = 0.0
+                                    cell_bond_signal_in[partner, p_slot, ch] = 0.0
+                            else:
+                                # Keep both sides in sync
+                                cell_bond_strength[i, b] = strength
+                                cell_bond_strength[partner, p_slot] = strength
 
 
 @ti.kernel
@@ -92,16 +143,23 @@ def process_unbond():
             for b in range(4):
                 partner = cell_bonds[i, b]
                 if partner >= 0:
-                    # Remove us from partner's bond list
                     for pb in range(4):
                         if cell_bonds[partner, pb] == i:
                             cell_bonds[partner, pb] = -1
+                            cell_bond_strength[partner, pb] = 0.0
+                            for ch in range(BOND_SIGNAL_CHANNELS):
+                                cell_bond_signal_out[partner, pb, ch] = 0.0
+                                cell_bond_signal_in[partner, pb, ch] = 0.0
                     cell_bonds[i, b] = -1
+                    cell_bond_strength[i, b] = 0.0
+                    for ch in range(BOND_SIGNAL_CHANNELS):
+                        cell_bond_signal_out[i, b, ch] = 0.0
+                        cell_bond_signal_in[i, b, ch] = 0.0
 
 
 @ti.kernel
 def process_bond_sharing():
-    """Bonded cells share chemicals: flow from higher to lower concentration."""
+    """Bonded cells share chemicals with lossy transfer, scaled by bond strength."""
     for i in range(MAX_CELLS):
         if cell_alive[i] == 1:
             for b in range(4):
@@ -109,38 +167,60 @@ def process_bond_sharing():
                 if partner >= 0 and cell_alive[partner] == 1:
                     # Only process when i < partner to avoid double-counting
                     if i < partner:
-                        rate = BOND_SHARE_RATE
+                        strength = cell_bond_strength[i, b]
+                        rate = BOND_SHARE_RATE * strength
+                        receive_frac = 1.0 - BOND_TRANSFER_LOSS
 
-                        # Energy sharing
+                        # Energy sharing (lossy)
                         diff_e = (cell_energy[i] - cell_energy[partner]) * rate
                         if diff_e > 0.0:
                             cell_energy[i] -= diff_e
-                            cell_energy[partner] += diff_e
+                            cell_energy[partner] += diff_e * receive_frac
                         elif diff_e < 0.0:
-                            cell_energy[partner] += diff_e
-                            cell_energy[i] -= diff_e
+                            cell_energy[partner] += diff_e  # diff_e is negative
+                            cell_energy[i] -= diff_e * receive_frac
 
-                        # Structure sharing
+                        # Structure sharing (lossy)
                         diff_s = (cell_structure[i] - cell_structure[partner]) * rate
                         if diff_s > 0.0:
                             cell_structure[i] -= diff_s
-                            cell_structure[partner] += diff_s
+                            cell_structure[partner] += diff_s * receive_frac
                         elif diff_s < 0.0:
                             cell_structure[partner] += diff_s
-                            cell_structure[i] -= diff_s
+                            cell_structure[i] -= diff_s * receive_frac
 
-                        # Replication material sharing
+                        # Replication material sharing (lossy)
                         diff_r = (cell_repmat[i] - cell_repmat[partner]) * rate
                         if diff_r > 0.0:
                             cell_repmat[i] -= diff_r
-                            cell_repmat[partner] += diff_r
+                            cell_repmat[partner] += diff_r * receive_frac
                         elif diff_r < 0.0:
                             cell_repmat[partner] += diff_r
-                            cell_repmat[i] -= diff_r
+                            cell_repmat[i] -= diff_r * receive_frac
 
                     # Bond maintenance cost (each cell pays)
                     cell_energy[i] -= BOND_COST
                     cell_energy[i] = ti.max(0.0, cell_energy[i])
+
+
+@ti.kernel
+def process_bond_signal_relay():
+    """Copy each cell's outgoing bond signals to the partner's incoming signals."""
+    for i in range(MAX_CELLS):
+        if cell_alive[i] == 1:
+            for b in range(4):
+                partner = cell_bonds[i, b]
+                if partner >= 0 and cell_alive[partner] == 1:
+                    # Find partner's slot pointing back to us
+                    for pb in range(4):
+                        if cell_bonds[partner, pb] == i:
+                            # Copy our outgoing to partner's incoming
+                            for ch in range(BOND_SIGNAL_CHANNELS):
+                                cell_bond_signal_in[partner, pb, ch] = cell_bond_signal_out[i, b, ch]
+                else:
+                    # No partner — clear incoming
+                    for ch in range(BOND_SIGNAL_CHANNELS):
+                        cell_bond_signal_in[i, b, ch] = 0.0
 
 
 # =============================================================================
@@ -171,7 +251,6 @@ def process_bonded_movement_phase1():
                 if cell_bonds[i, b] >= 0:
                     bonded = 1
             if bonded == 1 and cell_energy[i] >= MOVE_COST:
-                # Am I the lowest-index mover among my direct bond partners?
                 is_leader = 1
                 for b in range(4):
                     p = cell_bonds[i, b]
@@ -189,7 +268,6 @@ def process_bonded_movement_phase1():
 
                     can_move = 1
 
-                    # My target must be empty or a bond partner
                     target_id = grid_cell_id[tx, ty]
                     if target_id != -1:
                         is_partner = 0
@@ -199,7 +277,6 @@ def process_bonded_movement_phase1():
                         if is_partner == 0:
                             can_move = 0
 
-                    # Each partner's shifted position must be empty, me, or another partner
                     if can_move == 1:
                         for b in range(4):
                             p = cell_bonds[i, b]
@@ -240,7 +317,6 @@ def process_bonded_movement_phase2():
             tx = (cell_x[i] + dx + GRID_WIDTH) % GRID_WIDTH
             ty = (cell_y[i] + dy + GRID_HEIGHT) % GRID_HEIGHT
 
-            # Check if we won ALL target claims
             all_won = 1
             if grid_bonded_move_claim[tx, ty] != i:
                 all_won = 0
@@ -255,19 +331,16 @@ def process_bonded_movement_phase2():
                             all_won = 0
 
             if all_won == 1:
-                # Clear ALL old positions first
                 grid_cell_id[cell_x[i], cell_y[i]] = -1
                 for b in range(4):
                     p = cell_bonds[i, b]
                     if p >= 0 and cell_alive[p] == 1:
                         grid_cell_id[cell_x[p], cell_y[p]] = -1
 
-                # Move leader
                 cell_x[i] = tx
                 cell_y[i] = ty
                 grid_cell_id[tx, ty] = i
 
-                # Move partners
                 for b in range(4):
                     p = cell_bonds[i, b]
                     if p >= 0 and cell_alive[p] == 1:
@@ -277,7 +350,6 @@ def process_bonded_movement_phase2():
                         cell_y[p] = py
                         grid_cell_id[px, py] = p
 
-                # Only the leader pays movement cost
                 cell_energy[i] -= MOVE_COST
                 cell_energy[i] = ti.max(0.0, cell_energy[i])
 

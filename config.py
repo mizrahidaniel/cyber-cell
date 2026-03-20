@@ -81,10 +81,12 @@ ATTACK_MEMBRANE_DAMAGE = 8.0
 # Genome / Neural Network
 # =============================================================================
 MAX_GENOMES = 50000
-NUM_INPUTS = 18
+# 18 base inputs + 4 bonds * 4 signal channels = 34 total
+NUM_INPUTS = 34
 NETWORK_HIDDEN_SIZE = 32
-NUM_OUTPUTS = 10
-# 18*32 + 32 + 32*32 + 32 + 32*10 + 10 = 1994
+# 10 base outputs + 4 bond signal outputs = 14 total
+NUM_OUTPUTS = 14
+# 34*32 + 32 + 32*32 + 32 + 32*14 + 14 = 2638
 ATTACK_BIAS = -0.3            # initial attack output bias (sigmoid(-0.3)=0.43, evolvable)
 GENOME_SIZE = (NUM_INPUTS * NETWORK_HIDDEN_SIZE + NETWORK_HIDDEN_SIZE +
                NETWORK_HIDDEN_SIZE * NETWORK_HIDDEN_SIZE + NETWORK_HIDDEN_SIZE +
@@ -95,12 +97,12 @@ GRADIENT_SCALE_R = 5.0        # amplify R gradient for neural network input
 ACTION_THRESHOLD = 0.5
 
 # Weight layout offsets
-W1_END = NUM_INPUTS * NETWORK_HIDDEN_SIZE                    # 576
-B1_END = W1_END + NETWORK_HIDDEN_SIZE                        # 608
-W2_END = B1_END + NETWORK_HIDDEN_SIZE * NETWORK_HIDDEN_SIZE  # 1632
-B2_END = W2_END + NETWORK_HIDDEN_SIZE                        # 1664
-W3_END = B2_END + NETWORK_HIDDEN_SIZE * NUM_OUTPUTS           # 1984
-B3_END = W3_END + NUM_OUTPUTS                                # 1994
+W1_END = NUM_INPUTS * NETWORK_HIDDEN_SIZE                    # 1088
+B1_END = W1_END + NETWORK_HIDDEN_SIZE                        # 1120
+W2_END = B1_END + NETWORK_HIDDEN_SIZE * NETWORK_HIDDEN_SIZE  # 2144
+B2_END = W2_END + NETWORK_HIDDEN_SIZE                        # 2176
+W3_END = B2_END + NETWORK_HIDDEN_SIZE * NUM_OUTPUTS           # 2624
+B3_END = W3_END + NUM_OUTPUTS                                # 2638
 
 # =============================================================================
 # Mutation
@@ -120,6 +122,12 @@ DAUGHTER_RESOURCE_SHARE = 0.4
 # Bonding
 # =============================================================================
 BOND_SHARE_RATE = 0.1
+BOND_INITIAL_STRENGTH = 0.5      # starting strength on bond formation
+BOND_DECAY_RATE = 0.02           # strength lost per tick without reinforcement
+BOND_REINFORCE_RATE = 0.03       # strength gained per tick when both cells fire bond
+BOND_BREAK_THRESHOLD = 0.05      # auto-break below this strength
+BOND_TRANSFER_LOSS = 0.3         # fraction of shared resources destroyed in transit
+BOND_SIGNAL_CHANNELS = 4         # number of signal floats per bond direction
 R_LIGHT_ZONE_FRACTION = 0.15    # fraction of R deposits placed in the light zone
 
 # =============================================================================

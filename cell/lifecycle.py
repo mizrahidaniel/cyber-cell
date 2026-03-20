@@ -9,9 +9,11 @@ from config import (
     EAT_ABSORB_CAP, EAT_COST, S_ENERGY_VALUE, R_ENERGY_VALUE,
     PASSIVE_EAT_CAP,
 )
+from config import BOND_SIGNAL_CHANNELS
 from cell.cell_state import (
     cell_alive, cell_x, cell_y, cell_energy, cell_structure, cell_repmat,
-    cell_signal, cell_membrane, cell_age, cell_bonds, grid_cell_id,
+    cell_signal, cell_membrane, cell_age, cell_bonds, cell_bond_strength,
+    cell_bond_signal_out, cell_bond_signal_in, grid_cell_id,
     cell_count, free_slots, free_slot_count,
 )
 from world.grid import light_field
@@ -104,7 +106,15 @@ def check_death(env_S: ti.template(), env_R: ti.template(),
                     for pb in range(4):
                         if cell_bonds[partner, pb] == i:
                             cell_bonds[partner, pb] = -1
+                            cell_bond_strength[partner, pb] = 0.0
+                            for ch in range(BOND_SIGNAL_CHANNELS):
+                                cell_bond_signal_out[partner, pb, ch] = 0.0
+                                cell_bond_signal_in[partner, pb, ch] = 0.0
                     cell_bonds[i, b] = -1
+                    cell_bond_strength[i, b] = 0.0
+                    for ch in range(BOND_SIGNAL_CHANNELS):
+                        cell_bond_signal_out[i, b, ch] = 0.0
+                        cell_bond_signal_in[i, b, ch] = 0.0
 
             # Spill internal chemicals to environment
             env_S[x, y] += cell_structure[i] + cell_energy[i] * 0.5

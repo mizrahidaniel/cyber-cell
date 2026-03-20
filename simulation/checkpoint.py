@@ -7,7 +7,8 @@ from config import MAX_CELLS, MAX_GENOMES, GENOME_SIZE, GRID_WIDTH, GRID_HEIGHT,
 from cell.cell_state import (
     cell_alive, cell_x, cell_y, cell_energy, cell_structure, cell_repmat,
     cell_signal, cell_membrane, cell_age, cell_genome_id, cell_facing,
-    cell_bonds, grid_cell_id, free_slots, free_slot_count, cell_count,
+    cell_bonds, cell_bond_strength, cell_bond_signal_out, cell_bond_signal_in,
+    grid_cell_id, free_slots, free_slot_count, cell_count,
 )
 from cell.genome import (
     genome_weights, genome_ref_count, genome_count,
@@ -40,6 +41,9 @@ def save_checkpoint(path: str, tick: int, current_buffer: int, mutation_rng_stat
         cell_genome_id=cell_genome_id.to_numpy(),
         cell_facing=cell_facing.to_numpy(),
         cell_bonds=cell_bonds.to_numpy(),
+        cell_bond_strength=cell_bond_strength.to_numpy(),
+        cell_bond_signal_out=cell_bond_signal_out.to_numpy(),
+        cell_bond_signal_in=cell_bond_signal_in.to_numpy(),
         grid_cell_id=grid_cell_id.to_numpy(),
         free_slots=free_slots.to_numpy(),
         free_slot_count=free_slot_count[None],
@@ -85,6 +89,10 @@ def load_checkpoint(path: str) -> dict:
     cell_genome_id.from_numpy(data["cell_genome_id"])
     cell_facing.from_numpy(data["cell_facing"])
     cell_bonds.from_numpy(data["cell_bonds"])
+    if "cell_bond_strength" in data:
+        cell_bond_strength.from_numpy(data["cell_bond_strength"])
+        cell_bond_signal_out.from_numpy(data["cell_bond_signal_out"])
+        cell_bond_signal_in.from_numpy(data["cell_bond_signal_in"])
     grid_cell_id.from_numpy(data["grid_cell_id"])
     free_slots.from_numpy(data["free_slots"])
     free_slot_count[None] = int(data["free_slot_count"])

@@ -9,11 +9,13 @@ from config import (
     EAT_ABSORB_CAP, S_ENERGY_VALUE, R_ENERGY_VALUE,
     ATTACK_MEMBRANE_DAMAGE, DIVIDE_COST, DIVIDE_R_COST,
     PARENT_RESOURCE_SHARE, DAUGHTER_RESOURCE_SHARE, MEMBRANE_INITIAL,
+    BOND_SIGNAL_CHANNELS,
 )
 from cell.cell_state import (
     cell_alive, cell_x, cell_y, cell_energy, cell_structure, cell_repmat,
     cell_signal, cell_membrane, cell_age, cell_genome_id, cell_facing,
-    cell_bonds, grid_cell_id, cell_count, free_slots, free_slot_count,
+    cell_bonds, cell_bond_signal_out, grid_cell_id, cell_count,
+    free_slots, free_slot_count,
 )
 from cell.genome import action_outputs, needs_mutation
 from cell.sensing import facing_offset
@@ -159,6 +161,21 @@ def process_repair():
                 cell_structure[i] -= REPAIR_S_COST
                 cell_energy[i] -= REPAIR_COST
                 cell_energy[i] = ti.max(0.0, cell_energy[i])
+
+
+@ti.kernel
+def process_bond_signal_output():
+    """Write bond signal outputs [10..13] to all active bond slots. No energy cost."""
+    for i in range(MAX_CELLS):
+        if cell_alive[i] == 1:
+            for ch in range(BOND_SIGNAL_CHANNELS):
+                # action_outputs[i, 10 + ch] is the sigmoid output for this channel
+                val = action_outputs[i, 10 + ch]
+                for b in range(4):
+                    if cell_bonds[i, b] >= 0:
+                        cell_bond_signal_out[i, b, ch] = val
+                    else:
+                        cell_bond_signal_out[i, b, ch] = 0.0
 
 
 @ti.kernel

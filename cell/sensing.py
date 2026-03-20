@@ -1,14 +1,19 @@
-"""Compute all 18 sensory inputs for every alive cell in parallel."""
+"""Compute all 34 sensory inputs for every alive cell in parallel.
+
+Inputs [0..17]: original 18 sensory channels (light, internal state, gradients, neighbors).
+Inputs [18..33]: bond signal channels (4 bonds × 4 channels each).
+"""
 
 import taichi as ti
 
 from config import (
     MAX_CELLS, GRID_WIDTH, GRID_HEIGHT, MAX_CELL_AGE, NUM_INPUTS,
-    GRADIENT_SCALE_S, GRADIENT_SCALE_R,
+    GRADIENT_SCALE_S, GRADIENT_SCALE_R, BOND_SIGNAL_CHANNELS,
 )
 from cell.cell_state import (
     cell_alive, cell_x, cell_y, cell_energy, cell_structure, cell_repmat,
-    cell_membrane, cell_age, cell_facing, cell_bonds, grid_cell_id,
+    cell_membrane, cell_age, cell_facing, cell_bonds, cell_bond_signal_in,
+    grid_cell_id,
 )
 from cell.genome import sensory_inputs
 from world.grid import light_field
@@ -133,3 +138,12 @@ def compute_sensory_inputs(env_S: ti.template(), env_R: ti.template(),
             # [15] age normalized
             sensory_inputs[i, 15] = ti.cast(cell_age[i], ti.f32) / ti.cast(
                 MAX_CELL_AGE, ti.f32)
+
+            # [18..33] bond signal inputs: 4 bonds × 4 channels
+            for b in range(4):
+                for ch in range(BOND_SIGNAL_CHANNELS):
+                    idx = 18 + b * BOND_SIGNAL_CHANNELS + ch
+                    if cell_bonds[i, b] >= 0:
+                        sensory_inputs[i, idx] = cell_bond_signal_in[i, b, ch]
+                    else:
+                        sensory_inputs[i, idx] = 0.0

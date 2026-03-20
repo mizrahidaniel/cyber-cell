@@ -3,7 +3,7 @@
 import numpy as np
 import taichi as ti
 
-from config import MAX_CELLS, GRID_WIDTH, GRID_HEIGHT
+from config import MAX_CELLS, GRID_WIDTH, GRID_HEIGHT, BOND_SIGNAL_CHANNELS
 
 # Per-cell scalar fields
 cell_alive = ti.field(dtype=ti.i32, shape=(MAX_CELLS,))
@@ -20,6 +20,13 @@ cell_facing = ti.field(dtype=ti.i32, shape=(MAX_CELLS,))
 
 # Bond connections (-1 = no bond)
 cell_bonds = ti.field(dtype=ti.i32, shape=(MAX_CELLS, 4))
+
+# Bond strength per slot (0.0-1.0, decays without reinforcement)
+cell_bond_strength = ti.field(dtype=ti.f32, shape=(MAX_CELLS, 4))
+
+# Bond signal channels: outgoing signals this cell emits, incoming signals from partners
+cell_bond_signal_out = ti.field(dtype=ti.f32, shape=(MAX_CELLS, 4, BOND_SIGNAL_CHANNELS))
+cell_bond_signal_in = ti.field(dtype=ti.f32, shape=(MAX_CELLS, 4, BOND_SIGNAL_CHANNELS))
 
 # Spatial lookup: which cell occupies each grid position (-1 = empty)
 grid_cell_id = ti.field(dtype=ti.i32, shape=(GRID_WIDTH, GRID_HEIGHT))
@@ -39,6 +46,10 @@ def _init_fields():
         free_slots[i] = i
         for b in range(4):
             cell_bonds[i, b] = -1
+            cell_bond_strength[i, b] = 0.0
+            for ch in range(BOND_SIGNAL_CHANNELS):
+                cell_bond_signal_out[i, b, ch] = 0.0
+                cell_bond_signal_in[i, b, ch] = 0.0
     for i, j in grid_cell_id:
         grid_cell_id[i, j] = -1
 
