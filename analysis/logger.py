@@ -36,6 +36,9 @@ class SimulationLogger:
         self._lineage_file = open(self.lineage_path, "w")
         self._lineage_buffer = []
 
+        self.oee_path = os.path.join(self.log_dir, "oee_metrics.jsonl")
+        self._oee_file = open(self.oee_path, "w")
+
         # Burst snapshot state machine
         self._burst_active = False
         self._burst_start_tick = -1
@@ -112,7 +115,13 @@ class SimulationLogger:
         path = os.path.join(self.genomes_dir, f"genomes_{tick:08d}.npz")
         np.savez_compressed(path, **snap)
 
+    def log_oee_metrics(self, metrics: dict):
+        """Write OEE metrics to oee_metrics.jsonl."""
+        self._oee_file.write(json.dumps(metrics) + "\n")
+        self._oee_file.flush()
+
     def close(self):
         self._flush_lineage()
         self._file.close()
         self._lineage_file.close()
+        self._oee_file.close()

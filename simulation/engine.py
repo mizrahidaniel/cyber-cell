@@ -60,6 +60,7 @@ class SimulationEngine:
         self.mutation_rng = np.random.default_rng(RANDOM_SEED + 100)
         self.renderer = None
         self.logger = None
+        self.oee_metrics = None
         self.backend = backend
         self.auto_switch = auto_switch and backend in ("cpu", "cuda")
         self._switch_streak = 0  # consecutive checks wanting a switch
@@ -83,7 +84,9 @@ class SimulationEngine:
             init_archipelago()
 
         from analysis.logger import SimulationLogger
+        from analysis.oee_metrics import OEEMetrics
         self.logger = SimulationLogger()
+        self.oee_metrics = OEEMetrics()
 
         if not self.headless:
             from visualization.renderer import Renderer
@@ -105,7 +108,9 @@ class SimulationEngine:
             self.mutation_rng.bit_generator.state = rng_state.item()
 
         from analysis.logger import SimulationLogger
+        from analysis.oee_metrics import OEEMetrics
         self.logger = SimulationLogger()
+        self.oee_metrics = OEEMetrics()
 
         if not self.headless:
             from visualization.renderer import Renderer
@@ -242,9 +247,13 @@ class SimulationEngine:
         if self.tick_count > 0 and self.tick_count % GENOME_GC_INTERVAL == 0:
             garbage_collect_genomes()
 
-        # 9. Periodic logging
+        # 9. Periodic logging and OEE metrics
         if self.logger and self.tick_count % SNAPSHOT_INTERVAL == 0:
             self.logger.snapshot(self.tick_count)
+            if self.oee_metrics:
+                oee = self.oee_metrics.compute_all(self.tick_count)
+                if self.logger:
+                    self.logger.log_oee_metrics(oee)
 
         # 9b. Burst snapshots (checked every tick, lightweight)
         if self.logger:
