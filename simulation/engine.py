@@ -12,6 +12,8 @@ from config import (
     DEPOSIT_RELOCATE_INTERVAL, ARCHIPELAGO_ENABLED, MIGRATION_INTERVAL,
     GENOME_TYPE, MIN_POPULATION, RESPAWN_INTERVAL,
     LIGHT_ATTENUATION_ENABLED, WASTE_ENABLED,
+    SYNTROPHY_ENABLED, BOND_WASTE_EQUALIZATION,
+    PREDATION_ENABLED, PREDATION_INTERVAL,
 )
 
 from world.grid import compute_light, init_grid, compute_local_density, apply_light_attenuation
@@ -23,7 +25,8 @@ from world.chemistry import (
 from cell.cell_state import init_cell_state, cell_count
 from cell.lifecycle import (
     photosynthesis, eat_passive, apply_metabolism, check_death,
-    apply_waste_toxicity,
+    apply_waste_toxicity, update_waste_exposure, syntrophy,
+    apply_environmental_predation,
 )
 from cell.genome import (
     init_genome_table, evaluate_all_networks, process_mutations,
@@ -40,7 +43,7 @@ from cell.actions import (
 from cell.bonding import (
     process_bond, process_unbond, process_bond_sharing,
     process_bonded_movement, process_bond_strength_update,
-    process_bond_signal_relay,
+    process_bond_signal_relay, process_bond_waste_equalization,
 )
 from simulation.spawner import seed_cells, respawn_cells
 
@@ -79,6 +82,9 @@ class SimulationEngine:
         if GENOME_TYPE == "crn":
             from cell.crn_genome import init_crn_genome_table
             init_crn_genome_table()
+        elif GENOME_TYPE == "ctrnn":
+            from cell.ctrnn_genome import init_ctrnn_genome_table
+            init_ctrnn_genome_table()
         else:
             init_genome_table()
 
@@ -195,15 +201,23 @@ class SimulationEngine:
 
         # 2. Passive processes (always on, not gated by neural net)
         photosynthesis(env_S, env_R, env_W_write)
+        if SYNTROPHY_ENABLED:
+            syntrophy(env_W_write)
         eat_passive(env_S, env_R)
         if WASTE_ENABLED:
-            apply_waste_toxicity(env_W_read)
+            update_waste_exposure(env_W_read)
+            if BOND_WASTE_EQUALIZATION:
+                process_bond_waste_equalization()
+            apply_waste_toxicity()
 
         # 3. Sense -> Think -> Act
         compute_sensory_inputs(env_S, env_R, env_G, env_W_read)
         if GENOME_TYPE == "crn":
             from cell.crn_genome import evaluate_all_crns
             evaluate_all_crns()
+        elif GENOME_TYPE == "ctrnn":
+            from cell.ctrnn_genome import evaluate_all_ctrnn
+            evaluate_all_ctrnn()
         else:
             evaluate_all_networks()
 
@@ -229,6 +243,9 @@ class SimulationEngine:
         if GENOME_TYPE == "crn":
             from cell.crn_genome import process_crn_mutations
             process_crn_mutations(self.tick_count)
+        elif GENOME_TYPE == "ctrnn":
+            from cell.ctrnn_genome import process_ctrnn_mutations
+            process_ctrnn_mutations(self.tick_count)
         else:
             process_mutations(self.mutation_rng, self.tick_count)
 
@@ -237,6 +254,11 @@ class SimulationEngine:
             events = get_mutation_events()
             if events:
                 self.logger.log_lineage_events(events)
+
+        # 4b. Environmental predation
+        if (PREDATION_ENABLED and self.tick_count > 0
+                and self.tick_count % PREDATION_INTERVAL == 0):
+            apply_environmental_predation()
 
         # 5. Metabolism and death
         apply_metabolism()

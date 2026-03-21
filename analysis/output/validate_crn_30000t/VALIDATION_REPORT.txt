@@ -1,45 +1,47 @@
 VALIDATION REPORT — 30,000 ticks (CRN genome)
-Date: 2026-03-20 08:04:16
+Date: 2026-03-20 15:20:12
 Seed: 42  Archipelago: True
-Result: 19/20 passed
+Result: 21/21 passed
 
   [PASS] Population survives
-         final=137, min=58, peak=1774
+         final=272, min=66, peak=1673
   [PASS] No catastrophic crash (<95% loss)
-         initial=1021, min=58
+         initial=1033, min=66
   [PASS] Bond strength decay working (8a)
-         mean=0.221, std=0.321, n=3761
+         mean=0.764, std=0.388, n=7708
   [PASS] Lossy transfer doesn't crash bonded cells (8b)
-         8 bonded cells alive at end
+         26 bonded cells alive at end
   [PASS] Bond signals active for bonded cells (8c)
          N/A for CRN genome (8 actions, no bond signal outputs)
   [PASS] Gradient noise applied (9a)
-         mean gradient variance=0.1151
-  [FAIL] Archipelago: cells in multiple quadrants (10)
-         quadrant pops: [137, 0, 0, 0], 1/4 populated
-  [PASS] Predation system active (11)
-         attack deaths: 6382, starvation deaths: 8488 [kill rewards detected]
+         mean gradient variance=0.1011
+  [PASS] Archipelago: cells in multiple quadrants (10)
+         quadrant pops: [271, 1, 0, 0], 2/4 populated
+  [PASS] Death tracking active (11)
+         predation: 793, waste: 0, age: 475, starvation: 8193 [kill rewards detected]
   [PASS] Genome diversity maintained
-         final=657, peak=2166
+         final=602, peak=2119
   [PASS] No degenerate chains (8a goal)
-         4 clusters, avg=2.0, max=2, degenerate(>10)=0
+         10 clusters, avg=2.6, max=4, degenerate(>10)=0
   [PASS] Healthy energy levels
-         avg energy (last samples)=25.03
+         avg energy (last samples)=126.64
   [PASS] Light attenuation working
-         avg effective light=0.227, avg local density=13.1
+         avg effective light=0.217, avg local density=15.1
   [PASS] Waste system active
-         avg waste at cells=0.8954 (target >0)
+         avg waste at cells=0.2270 (target >0)
   [PASS] Waste not runaway
-         peak waste=1.98 (target <50)
+         peak waste=0.30 (target <50)
   [PASS] Waste creates pressure
-         avg waste at cells (late)=0.9151 (target >0.05)
+         avg waste at cells (late)=0.2263 (target >0.05)
+  [PASS] Environmental predation active
+         predation deaths=793 (target >0)
   [PASS] CRN: Population > 50
-         final_pop=137 (target >50)
+         final_pop=272 (target >50)
   [PASS] CRN: Movement circuit works
-         early avg=0.077, overall=0.032 (target: early >0.05)
+         early avg=0.167, overall=0.052 (target: early >0.05)
   [PASS] CRN: Attack < 5%
          avg=0.000 (target <0.05)
   [PASS] CRN: Hidden chemicals active
-         peak hidden zone mean=0.6838 (target >0.01)
+         peak hidden zone mean=2.8925 (target >0.01)
   [PASS] CRN: Reactions diversified
-         dominant genome has 12 active reactions (target >=5)
+         dominant genome has 17 active reactions (target >=5)

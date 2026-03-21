@@ -13,7 +13,10 @@ from cell.genome import (
     genome_parent_id, genome_birth_tick,
 )
 from config import GENOME_SIZE
-from cell.lifecycle import deaths_by_attack, deaths_by_starvation
+from cell.lifecycle import (
+    deaths_by_starvation, deaths_by_age, deaths_by_waste, deaths_by_predation,
+    zone_deaths, reset_death_counters,
+)
 
 # Birth/death counters (reset periodically)
 births_counter = ti.field(dtype=ti.i32, shape=())
@@ -140,6 +143,11 @@ def get_genome_weight_snapshot() -> dict:
         from config import CRN_GENOME_SIZE
         gs = CRN_GENOME_SIZE
         all_w = crn_weights.to_numpy()
+    elif GENOME_TYPE == "ctrnn":
+        from cell.ctrnn_genome import ctrnn_weights
+        from config import CTRNN_GENOME_SIZE
+        gs = CTRNN_GENOME_SIZE
+        all_w = ctrnn_weights.to_numpy()
     else:
         gs = GENOME_SIZE
         all_w = genome_weights.to_numpy()
@@ -293,8 +301,11 @@ def get_predation_stats() -> dict:
             "attack_fraction": 0.0,
             "avg_membrane": 0.0,
             "bond_fraction": 0.0,
-            "deaths_by_attack": 0,
             "deaths_by_starvation": 0,
+            "deaths_by_age": 0,
+            "deaths_by_waste": 0,
+            "deaths_by_predation": 0,
+            "zone_deaths": [[0] * 4, [0] * 4, [0] * 4],
         }
 
     # Fraction of cells with attack output above threshold
@@ -309,19 +320,24 @@ def get_predation_stats() -> dict:
     bonded_cells = int(((bonds[alive] >= 0).any(axis=1)).sum())
 
     # Death cause counters (cumulative since last reset)
-    d_attack = int(deaths_by_attack[None])
     d_starve = int(deaths_by_starvation[None])
+    d_age = int(deaths_by_age[None])
+    d_waste = int(deaths_by_waste[None])
+    d_pred = int(deaths_by_predation[None])
+    zd = zone_deaths.to_numpy().tolist()
 
     # Reset counters for next interval
-    deaths_by_attack[None] = 0
-    deaths_by_starvation[None] = 0
+    reset_death_counters()
 
     return {
         "attack_fraction": float(attackers / count),
         "avg_membrane": float(membranes.mean()),
         "bond_fraction": float(bonded_cells / count),
-        "deaths_by_attack": d_attack,
         "deaths_by_starvation": d_starve,
+        "deaths_by_age": d_age,
+        "deaths_by_waste": d_waste,
+        "deaths_by_predation": d_pred,
+        "zone_deaths": zd,
     }
 
 
@@ -422,4 +438,156 @@ def get_crn_snapshot() -> dict | None:
         "dominant_count": int(gid_counts[dom_idx]),
         "dominant_reactions": dom_reactions,
         "num_active_genomes": len(unique_gids),
+    }
+
+
+def get_ctrnn_snapshot() -> dict | None:
+    """Extract CTRNN internal state for diagnostics. Returns None if not CTRNN."""
+    from config import GENOME_TYPE
+    if GENOME_TYPE != "ctrnn":
+        return None
+
+    from config import (
+        CTRNN_NUM_NEURONS, CTRNN_NUM_SENSORY, CTRNN_NUM_HIDDEN,
+        CTRNN_NUM_ACTION, CTRNN_RECURRENT_K, CTRNN_PARAMS_PER_NEURON,
+    )
+    from cell.ctrnn_genome import ctrnn_neurons, ctrnn_weights
+
+    NN = CTRNN_NUM_NEURONS     # 16
+    NS = CTRNN_NUM_SENSORY     # 8
+    NH = CTRNN_NUM_HIDDEN      # 4
+    NA = CTRNN_NUM_ACTION      # 4
+    RK = CTRNN_RECURRENT_K     # 4
+    PPR = CTRNN_PARAMS_PER_NEURON  # 11
+    NEURON_END = NN * PPR      # 176
+
+    alive = cell_alive.to_numpy() == 1
+    count = int(alive.sum())
+    if count == 0:
+        return None
+
+    neurons = ctrnn_neurons.to_numpy()[:MAX_CELLS][alive]
+    gids = cell_genome_id.to_numpy()[alive]
+    weights = ctrnn_weights.to_numpy()
+
+    # Zone activation means
+    sensory_mean = float(neurons[:, :NS].mean())
+    hidden_mean = float(neurons[:, NS:NS + NH].mean())
+    action_mean = float(neurons[:, NS + NH:].mean())
+
+    # Per-neuron stats
+    neuron_means = [float(neurons[:, n].mean()) for n in range(NN)]
+    neuron_stds = [float(neurons[:, n].std()) for n in range(NN)]
+
+    # Population-weighted genome stats
+    unique_gids, gid_counts = np.unique(gids, return_counts=True)
+    total = float(gid_counts.sum())
+
+    tau_w = np.zeros(NN)
+    bias_w = np.zeros(NN)
+    amp_w = np.zeros(NN)
+
+    for j, gid in enumerate(unique_gids):
+        g, frac = int(gid), gid_counts[j] / total
+        for n in range(NN):
+            base = n * PPR
+            tau_w[n] += abs(weights[g, base + 0]) * frac
+            bias_w[n] += weights[g, base + 1] * frac
+            amp_w[n] += weights[g, base + 2] * frac
+
+    # Action biases
+    action_biases_w = np.zeros(NA)
+    for j, gid in enumerate(unique_gids):
+        g, frac = int(gid), gid_counts[j] / total
+        for a in range(NA):
+            action_biases_w[a] += weights[g, NEURON_END + NS + a] * frac
+
+    return {
+        "sensory_mean": sensory_mean,
+        "hidden_mean": hidden_mean,
+        "action_mean": action_mean,
+        "neuron_means": neuron_means,
+        "neuron_stds": neuron_stds,
+        "tau_mean": tau_w.tolist(),
+        "bias_mean": bias_w.tolist(),
+        "amp_mean": amp_w.tolist(),
+        "action_biases": action_biases_w.tolist(),
+        "num_active_genomes": len(unique_gids),
+    }
+
+
+def get_cluster_stats() -> dict:
+    """Compute bond cluster statistics using union-find."""
+    alive_np = cell_alive.to_numpy()
+    alive = alive_np == 1
+    count = int(alive.sum())
+
+    if count == 0:
+        return {
+            "num_clusters": 0,
+            "avg_cluster_size": 0.0,
+            "max_cluster_size": 0,
+            "bonded_fraction": 0.0,
+        }
+
+    bonds = cell_bonds.to_numpy()[:MAX_CELLS]
+    parent = {}
+    for i in np.where(alive)[0]:
+        for b in range(4):
+            p = int(bonds[i, b])
+            if p >= 0 and alive_np[p] == 1:
+                if i not in parent:
+                    parent[i] = i
+                if p not in parent:
+                    parent[p] = p
+                ri, rp = i, p
+                while parent[ri] != ri:
+                    ri = parent[ri]
+                while parent[rp] != rp:
+                    rp = parent[rp]
+                if ri != rp:
+                    parent[rp] = ri
+
+    if not parent:
+        return {
+            "num_clusters": 0,
+            "avg_cluster_size": 0.0,
+            "max_cluster_size": 0,
+            "bonded_fraction": 0.0,
+        }
+
+    clusters = {}
+    for node in parent:
+        root = node
+        while parent[root] != root:
+            root = parent[root]
+        clusters.setdefault(root, []).append(node)
+
+    sizes = [len(v) for v in clusters.values()]
+    bonded_count = sum(sizes)
+
+    return {
+        "num_clusters": len(sizes),
+        "avg_cluster_size": float(np.mean(sizes)),
+        "max_cluster_size": max(sizes),
+        "bonded_fraction": float(bonded_count / count),
+    }
+
+
+def get_division_stats() -> dict:
+    """Get division displacement stats and reset accumulators."""
+    from cell.actions import division_count, daughter_dx_sum, daughter_dy_sum
+
+    divs = int(division_count[None])
+    dx_sum = int(daughter_dx_sum[None])
+    dy_sum = int(daughter_dy_sum[None])
+
+    division_count[None] = 0
+    daughter_dx_sum[None] = 0
+    daughter_dy_sum[None] = 0
+
+    return {
+        "divisions": divs,
+        "avg_daughter_dx": float(dx_sum / divs) if divs > 0 else 0.0,
+        "avg_daughter_dy": float(dy_sum / divs) if divs > 0 else 0.0,
     }

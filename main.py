@@ -122,7 +122,7 @@ def parse_args():
                         help="Run without visualization")
     parser.add_argument("--ticks", type=int, default=0,
                         help="Number of ticks to run (0 = unlimited)")
-    parser.add_argument("--genome", default=None, choices=["neural", "crn"],
+    parser.add_argument("--genome", default=None, choices=["neural", "crn", "ctrnn"],
                         help="Genome type (default: use config.py setting)")
     parser.add_argument("--seed", type=int, default=RANDOM_SEED,
                         help="Random seed for reproducibility")

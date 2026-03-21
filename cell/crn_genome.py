@@ -23,8 +23,9 @@ from config import (
     NUM_HIDDEN_CHEMICALS, CRN_SENSORY_BLEND, CRN_EXTRA_PARAMS,
     CRN_GRADIENT_TURN_MIN, ACTION_THRESHOLD, CRN_HIDDEN_DECAY,
     CRN_ACTION_GAIN, CRN_ACTION_CENTER, CRN_HIDDEN_BASAL,
+    CRN_BOND_SIGNAL_BLEND,
 )
-from cell.cell_state import cell_alive, cell_genome_id, cell_facing
+from cell.cell_state import cell_alive, cell_genome_id, cell_facing, cell_bonds
 from cell.genome import sensory_inputs, action_outputs, needs_mutation
 
 # CRN genome storage: reaction params (112) + action biases (4) + hidden decay (4)
@@ -79,6 +80,18 @@ def evaluate_all_crns():
             # 2b. Basal production for hidden chemicals
             for h in range(NH):
                 crn_chemicals[i, NS + h] += CRN_HIDDEN_BASAL
+
+            # 2c. Blend incoming bond signals into hidden chemicals
+            for h in range(NH):
+                bond_sig_sum = 0.0
+                bond_count = 0
+                for b in range(4):
+                    if cell_bonds[i, b] >= 0:
+                        bond_sig_sum += sensory_inputs[i, 18 + b * 4 + h]
+                        bond_count += 1
+                if bond_count > 0:
+                    avg_sig = bond_sig_sum / ti.cast(bond_count, ti.f32)
+                    crn_chemicals[i, 8 + h] += avg_sig * CRN_BOND_SIGNAL_BLEND
 
             # 3. Evaluate reactions (read/write any of 16 chemicals)
             for r in range(MR):
@@ -182,11 +195,17 @@ def evaluate_all_crns():
             else:
                 action_outputs[i, 6] = 0.0
 
-            # 10. Zero unmapped outputs
+            # 10. Zero unmapped outputs + bond signals from hidden chemicals
             action_outputs[i, 7] = 0.0   # unbond
             action_outputs[i, 9] = 0.0   # repair
-            for ao in range(10, NUM_OUTPUTS):
-                action_outputs[i, ao] = 0.0
+            # Bond signal outputs (10-13) from hidden chemicals 10-11
+            # Chemical 10 → channels 0,1; Chemical 11 → channels 2,3
+            for ch in range(4):
+                h_val = crn_chemicals[i, 10 + ch // 2]
+                if h_val > 0.5:
+                    action_outputs[i, 10 + ch] = h_val
+                else:
+                    action_outputs[i, 10 + ch] = 0.0
 
 
 @ti.func
@@ -255,10 +274,16 @@ def _apply_crn_mutations_gpu(tick: ti.i32):
                 crn_weights[new_gid, r * PPR + 5] = 0.0
                 changed = 1
 
-        # Reaction duplication
+        # Reaction duplication (prefer empty target slots)
         if ti.random(ti.f32) < CRN_MUTATION_RATE_DUPLICATE:
             src_r = ti.cast(ti.random(ti.f32) * MR, ti.i32) % MR
             dst_r = ti.cast(ti.random(ti.f32) * MR, ti.i32) % MR
+            found_empty = 0
+            for r in range(MR):
+                if found_empty == 0 and r != src_r:
+                    if ti.abs(crn_weights[new_gid, r * PPR + 5]) < 0.001:
+                        dst_r = r
+                        found_empty = 1
             if src_r != dst_r:
                 for p in range(PPR):
                     crn_weights[new_gid, dst_r * PPR + p] = (
@@ -323,7 +348,7 @@ def init_crn_genome_table(count: int = INITIAL_CELL_COUNT, seed: int = RANDOM_SE
     weights = np.zeros((MAX_GENOMES, CRN_GENOME_SIZE), dtype=np.float32)
 
     for g in range(count):
-        # Bootstrap reactions 0-2: viable sensory->action circuits
+        # Bootstrap reactions 0-3: viable sensory->action circuits
         # Reaction 0: light > 0.2 -> eat (chem 0 -> chem 12)
         _set_reaction(weights, g, 0, inp_a=0.03, inp_b=0.03, out=0.78,
                       th_a=0.2, th_b=0.2, rate=0.3, decay=0.1, rng=rng)
@@ -333,8 +358,11 @@ def init_crn_genome_table(count: int = INITIAL_CELL_COUNT, seed: int = RANDOM_SE
         # Reaction 2: structure > 0.1 -> move (chem 2 -> chem 13)
         _set_reaction(weights, g, 2, inp_a=0.15, inp_b=0.15, out=0.84,
                       th_a=0.1, th_b=0.1, rate=0.2, decay=0.15, rng=rng)
-        # Reactions 3-15: random with biased zone targeting
-        for r in range(3, MAX_REACTIONS):
+        # Reaction 3: waste > 0.3 -> move (chem 7 -> chem 13)
+        _set_reaction(weights, g, 3, inp_a=0.47, inp_b=0.47, out=0.84,
+                      th_a=0.3, th_b=0.3, rate=0.25, decay=0.1, rng=rng)
+        # Reactions 4-15: random with biased zone targeting
+        for r in range(4, min(16, MAX_REACTIONS)):
             base = r * PPR
             weights[g, base + 0] = rng.uniform(0.0, 0.5)   # input -> sensory
             weights[g, base + 1] = rng.uniform(0.0, 0.5)   # input -> sensory
@@ -345,6 +373,19 @@ def init_crn_genome_table(count: int = INITIAL_CELL_COUNT, seed: int = RANDOM_SE
             weights[g, base + 3] = rng.uniform(0.1, 0.5)
             weights[g, base + 4] = rng.uniform(0.1, 0.5)
             weights[g, base + 5] = rng.uniform(-0.3, 0.3)
+            weights[g, base + 6] = rng.uniform(0.01, 0.3)
+        # Reactions 16+: silent slots (wired but rate=0, evolvable)
+        for r in range(16, MAX_REACTIONS):
+            base = r * PPR
+            weights[g, base + 0] = rng.uniform(0.0, 0.5)   # input -> sensory
+            weights[g, base + 1] = rng.uniform(0.0, 0.5)   # input -> sensory
+            if rng.random() < 0.6:
+                weights[g, base + 2] = rng.uniform(0.75, 1.0)  # output -> action
+            else:
+                weights[g, base + 2] = rng.uniform(0.5, 0.75)  # output -> hidden
+            weights[g, base + 3] = rng.uniform(0.1, 0.5)
+            weights[g, base + 4] = rng.uniform(0.1, 0.5)
+            weights[g, base + 5] = 0.0                      # silent: rate=0
             weights[g, base + 6] = rng.uniform(0.01, 0.3)
 
         # Action biases (112-115) and hidden decay rates (116-119)

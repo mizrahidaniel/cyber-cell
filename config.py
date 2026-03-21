@@ -50,11 +50,17 @@ LIGHT_ATTENUATION_RADIUS = 2    # neighborhood radius for density count
 # Metabolic Waste (photosynthesis byproduct, local toxicity)
 # =============================================================================
 WASTE_ENABLED = True
-WASTE_PRODUCTION_RATE = 0.03     # waste per unit energy gained (SS isolated ~0.26, cluster interior ~0.50)
+WASTE_PRODUCTION_RATE = 0.05     # waste per unit energy gained (solo SS ~0.35+, bonded pair SS ~0.26)
 WASTE_DECAY_RATE = 0.002         # per-tick decay (half-life ~350 ticks)
 WASTE_DIFFUSION_RATE = 0.05      # 5% spreads per tick (same as signal)
-WASTE_TOXICITY_THRESHOLD = 0.3   # cluster edges (~0.40) take damage; isolated cells (0.26) safe
+WASTE_TOXICITY_THRESHOLD = 0.3   # dense clusters take damage; isolated cells safe at current densities
 WASTE_TOXICITY_RATE = 0.2        # membrane damage per tick per unit waste above threshold
+
+# Syntrophy (waste-to-energy conversion)
+SYNTROPHY_ENABLED = True
+SYNTROPHY_THRESHOLD = 0.3            # min waste for syntrophy to activate
+SYNTROPHY_RATE = 0.02                # energy gained per unit waste consumed
+SYNTROPHY_CONSUMPTION_RATE = 0.05    # waste consumed per tick when active
 
 # =============================================================================
 # Archipelago (soft-wall quadrant partitioning)
@@ -79,6 +85,7 @@ INITIAL_CELL_COUNT = 1000
 MIN_POPULATION = 50               # respawn threshold to prevent stochastic extinction
 RESPAWN_COUNT = 100               # cells to add when below MIN_POPULATION
 RESPAWN_INTERVAL = 5000           # min ticks between respawns
+RESPAWN_ENERGY = 80.0             # higher than INITIAL_ENERGY so respawned cells survive division + night
 MAX_CELL_AGE = 5000
 INITIAL_ENERGY = 35.0
 INITIAL_STRUCTURE = 25.0
@@ -169,10 +176,23 @@ BOND_TRANSFER_LOSS = 0.3         # fraction of shared resources destroyed in tra
 BOND_SIGNAL_CHANNELS = 4         # number of signal floats per bond direction
 R_LIGHT_ZONE_FRACTION = 0.15    # fraction of R deposits placed in the light zone
 
+# Bond-waste mechanics
+BOND_WASTE_EQUALIZATION = True       # bonds redistribute waste across cluster
+BOND_WASTE_EQUALIZE_RATE = 0.2       # fraction of waste diff equalized per tick per bond
+BOND_METABOLIC_EFFICIENCY = True     # bonded cells produce less waste
+BOND_METABOLIC_EFFICIENCY_RATE = 0.25  # max waste reduction (25%) with 2+ bonds
+
+# Environmental Predation (gape-limited: bonds protect)
+PREDATION_ENABLED = True
+PREDATION_INTERVAL = 100          # ticks between predation sweeps
+PREDATION_SOLO_KILL_PROB = 0.01   # per-sweep kill prob for 0 bonds (~9.5% per 1000 ticks)
+PREDATION_PAIR_KILL_PROB = 0.005  # per-sweep kill prob for 1 bond (~5% per 1000 ticks)
+PREDATION_IMMUNE_BONDS = 2        # cells with >= this many bonds are immune
+
 # =============================================================================
 # Genome type selection
 # =============================================================================
-GENOME_TYPE = "neural"           # "neural" or "crn"
+GENOME_TYPE = "neural"           # "neural", "crn", or "ctrnn"
 
 # =============================================================================
 # CRN Genome (Chemical Reaction Network)
@@ -181,11 +201,11 @@ NUM_INTERNAL_CHEMICALS = 16      # 8 sensory + 4 hidden + 4 action
 NUM_SENSORY_CHEMICALS = 8        # chemicals 0-7: written by environment
 NUM_HIDDEN_CHEMICALS = 4         # chemicals 8-11: internal memory/gates
 NUM_ACTION_CHEMICALS = 4         # chemicals 12-15: reset each tick, drive actions
-MAX_REACTIONS = 16
+MAX_REACTIONS = 24                # 4 bootstrap + 12 random + 8 silent (rate=0, evolvable)
 CRN_PARAMS_PER_REACTION = 7
 CRN_EXTRA_PARAMS = 8             # 4 action biases + 4 hidden decay rates
-CRN_GENOME_SIZE = MAX_REACTIONS * CRN_PARAMS_PER_REACTION + CRN_EXTRA_PARAMS  # 120
-CRN_MUTATION_RATE_PERTURB = 0.02
+CRN_GENOME_SIZE = MAX_REACTIONS * CRN_PARAMS_PER_REACTION + CRN_EXTRA_PARAMS  # 176
+CRN_MUTATION_RATE_PERTURB = 0.014  # scaled from 0.02 by 120/176 to hold mutation load at ~2.4/gen
 CRN_MUTATION_SIGMA = 0.1
 CRN_MUTATION_RATE_DUPLICATE = 0.005
 CRN_MUTATION_RATE_DELETE = 0.005
@@ -196,6 +216,30 @@ CRN_SENSORY_BLEND = 0.5          # environment weight in sensory blend
 CRN_HIDDEN_DECAY = 0.02          # default per-tick decay for hidden chemicals
 CRN_HIDDEN_BASAL = 0.005         # basal production rate for hidden chemicals (steady-state 0.25, below aux threshold)
 CRN_GRADIENT_TURN_MIN = 0.15     # min gradient magnitude for turns
+CRN_BOND_SIGNAL_BLEND = 0.15    # blend rate for incoming bond signals into hidden chemicals
+
+# =============================================================================
+# CTRNN Genome (Continuous-Time Recurrent Neural Network with CfC dynamics)
+# =============================================================================
+CTRNN_NUM_NEURONS = 16           # 8 sensory + 4 hidden + 4 action
+CTRNN_NUM_SENSORY = 8
+CTRNN_NUM_HIDDEN = 4
+CTRNN_NUM_ACTION = 4
+CTRNN_RECURRENT_K = 4            # sparse recurrent connections per neuron
+CTRNN_PARAMS_PER_NEURON = 11     # tau, bias, A, 4 weights, 4 target indices
+CTRNN_EXTRA_PARAMS = 12          # 8 input gains + 4 action biases
+CTRNN_GENOME_SIZE = CTRNN_NUM_NEURONS * CTRNN_PARAMS_PER_NEURON + CTRNN_EXTRA_PARAMS  # 188
+CTRNN_MUTATION_RATE_PERTURB = 0.013  # calibrated for ~2.4 mutations/gen (188*0.013)
+CTRNN_MUTATION_SIGMA = 0.1
+CTRNN_MUTATION_RATE_DUPLICATE = 0.005
+CTRNN_MUTATION_RATE_REWIRE = 0.01
+CTRNN_TAU_MIN = 0.1              # fastest time constant
+CTRNN_TAU_MAX = 3.0              # slowest time constant
+CTRNN_WEIGHT_BOUND = 3.0         # weight clipping
+CTRNN_AMPLITUDE_INIT = 2.0       # initial amplitude for all neurons
+CTRNN_SENSORY_BLEND = 0.5        # environment weight in sensory blend (match CRN)
+CTRNN_ACTION_GAIN = 30.0         # sigmoid steepness (match CRN)
+CTRNN_ACTION_CENTER = 0.5        # sigmoid midpoint (match CRN)
 
 # =============================================================================
 # Visualization

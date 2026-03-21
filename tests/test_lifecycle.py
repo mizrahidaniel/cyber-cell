@@ -97,6 +97,7 @@ def test_division_fails_when_surrounded():
     )
     from cell.genome import init_genome_table, action_outputs
     from cell.actions import process_divide_phase1, process_divide_phase2, clear_intentions
+    from config import NUM_OUTPUTS
 
     init_cell_state()
     init_genome_table(count=5)
@@ -114,9 +115,12 @@ def test_division_fails_when_surrounded():
         cell_genome_id[idx] = idx
         cell_facing[idx] = 0
         grid_cell_id[x, y] = idx
+        # Clear stale action outputs from prior tests
+        for o in range(NUM_OUTPUTS):
+            action_outputs[idx, o] = 0.0
     cell_count[None] = 5
 
-    action_outputs[0, 5] = 0.9  # center cell tries to divide
+    action_outputs[0, 5] = 0.9  # only center cell tries to divide
 
     clear_intentions()
     process_divide_phase1()

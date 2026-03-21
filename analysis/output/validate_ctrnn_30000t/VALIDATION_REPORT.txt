@@ -1,0 +1,45 @@
+VALIDATION REPORT — 30,000 ticks (CTRNN genome)
+Date: 2026-03-20 16:25:09
+Seed: 42  Archipelago: True
+Result: 20/20 passed
+
+  [PASS] Population survives
+         final=497, min=501, peak=2003
+  [PASS] No catastrophic crash (<95% loss)
+         initial=1000, min=501
+  [PASS] Bond strength decay working (8a)
+         mean=0.135, std=0.221, n=2499
+  [PASS] Lossy transfer doesn't crash bonded cells (8b)
+         56 bonded cells alive at end
+  [PASS] Bond signals active for bonded cells (8c)
+         278/12156 checks had nonzero signals (2.3%)
+  [PASS] Gradient noise applied (9a)
+         mean gradient variance=0.1047
+  [PASS] Archipelago: cells in multiple quadrants (10)
+         quadrant pops: [271, 1, 209, 16], 4/4 populated
+  [PASS] Death tracking active (11)
+         predation: 2594, waste: 0, age: 1692, starvation: 27828 [kill rewards detected]
+  [PASS] Genome diversity maintained
+         final=1359, peak=2379
+  [PASS] No degenerate chains (8a goal)
+         25 clusters, avg=2.2, max=4, degenerate(>10)=0
+  [PASS] Healthy energy levels
+         avg energy (last samples)=129.84
+  [PASS] Light attenuation working
+         avg effective light=0.208, avg local density=15.2
+  [PASS] Waste system active
+         avg waste at cells=0.2176 (target >0)
+  [PASS] Waste not runaway
+         peak waste=0.30 (target <50)
+  [PASS] Waste creates pressure
+         avg waste at cells (late)=0.2155 (target >0.05)
+  [PASS] Environmental predation active
+         predation deaths=2594 (target >0)
+  [PASS] CTRNN: Population > 50
+         final_pop=497 (target >50)
+  [PASS] CTRNN: Movement circuit works
+         early avg=0.092, overall=0.119 (target: early >0.05)
+  [PASS] CTRNN: Hidden neurons active
+         peak |hidden| mean=0.8579 (target >0.01)
+  [PASS] CTRNN: Tau diversity
+         tau range [0.19, 1.82] span=1.62

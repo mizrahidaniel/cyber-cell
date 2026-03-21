@@ -1,6 +1,6 @@
 # CyberCell: Evolutionary Intelligence Simulation — Project Brief
 
-**Document version:** v7.1 — Tuned waste (production 3x, threshold 0.3, toxicity 4x). Waste sensing on input[15] replacing age (CRN C7 reads waste automatically). Attenuation k reduced 0.03→0.02 to compensate. 200k-tick runs: CRN achieved waste-driven zone migration (26% bright, 48% dim, 26% dark at 200k — avg X=255) through passive dispersal, not movement. Neural evolved hyper-predation (43% attack) causing population collapse. **Decision: focus development on CRN genome.** Neural retained as comparison baseline only. Analysis upgraded: 8-panel study figure, environmental pressure comparison, per-zone waste metrics, preflight test runner. Test suite fixed (28/28 passing).
+**Document version:** v8.0 — CTRNN genome type (16 CfC neurons, 188 params). CRN bond signal reception (issue #9b fixed). 867k CTRNN: max cluster 77, zone migration (15% bright), hidden tau differentiation (0.93-1.75). 30k validation: CRN 21/21, CTRNN 20/20. Test suite 39/39.
 
 ---
 
@@ -52,24 +52,27 @@ All systems built, working, and validated on CUDA.
 500x500 toroidal grid. Three light zones (bright/dim/dark). Day/night cycle (period 1000 ticks). Patchy resource deposits (radius 10, 20% relocate every 25k ticks). Archipelago: 4 soft-wall quadrants with +/-30% parameter variance, uniform-random migration (1 cell every 200 ticks — continuous trickle matching Wright's Nm≈1 rule). **Beer-Lambert light attenuation**: density-dependent shading reduces photosynthesis in crowded areas. `local_density` computed in radius-2 neighborhood; `light *= exp(-k * density)` with k=0.02. Creates 18-33% light reduction at typical occupied densities (10-20 neighbors).
 
 ### Chemistry
-5 chemicals: Energy (E), Structure (S), Replication Material (R), Signal (G), Waste (W). Double-buffered diffusion. Gradient noise (sigma=0.15) on all 6 gradient sensing channels. **Metabolic waste**: photosynthesis produces waste proportional to energy gained (rate 0.03). Waste diffuses (5%/tick), decays (0.002/tick, half-life ~350 ticks), and causes membrane damage above threshold (0.3) at rate 0.2/tick. **Cells sense waste directly** via sensory input[15] (replaced age sensing in v7.1). CRN C7 reads waste automatically through `_SENSORY_MAP[7]=15`.
+5 chemicals: Energy (E), Structure (S), Replication Material (R), Signal (G), Waste (W). Double-buffered diffusion. Gradient noise (sigma=0.15) on all 6 gradient sensing channels. **Metabolic waste**: photosynthesis produces waste proportional to energy gained (rate 0.03; bonded cells produce 25% less with 2+ bonds). Waste diffuses (5%/tick), decays (0.002/tick, half-life ~350 ticks), and causes membrane damage above threshold (0.3) at rate 0.2/tick. **Cells sense waste directly** via sensory input[15]. CRN C7 reads waste automatically through `_SENSORY_MAP[7]=15`. **Syntrophy**: all cells passively convert waste above 0.3 to energy (0.02 per unit consumed, up to 0.05/tick). **Per-cell waste exposure**: env waste is copied to `cell_waste_exposure` field, equalized through bonds, then used for toxicity — enabling bond-mediated waste sharing.
 
 ### CyberCell
-34 sensory inputs (18 base + 16 bond signals), 14 action outputs (10 base + 4 bond signal emission). Full state: position, energy, structure, repmat, signal, membrane, age, genome_id, facing, bonds, bond strength/signals, last_attacker.
+34 sensory inputs (18 base + 16 bond signals), 14 action outputs (10 base + 4 bond signal emission). Full state: position, energy, structure, repmat, signal, membrane, age, genome_id, facing, bonds, bond strength/signals, last_attacker, waste_exposure.
 
-### Genome — Two Types
+### Genome — Three Types
 
 **Chemical Reaction Network (`GENOME_TYPE = "crn"`, primary):**
-16 internal chemicals in 3 zones, 16 reaction rules. 120 parameters (112 reaction + 4 action biases + 4 hidden decays). See Section 5 for architecture details. **CRN is the focus genome for all new development.**
+16 internal chemicals in 3 zones, 24 reaction rules (4 bootstrap + 12 random + 8 silent). 176 parameters (168 reaction + 4 action biases + 4 hidden decays). See Section 5 for architecture details. **Bond signal reception (v8.0):** incoming bond signals blended into hidden chemicals at rate 0.15 (CRN_BOND_SIGNAL_BLEND). CRN is the primary genome for established experiments.
+
+**CTRNN (`GENOME_TYPE = "ctrnn"`, new in v8.0):**
+16-neuron continuous-time RNN with CfC dynamics (Hasani et al. 2022). 188 parameters. 3-zone structure (8 sensory + 4 hidden + 4 action), sparse recurrence (4 connections/neuron), evolved time constants. See Section 5b for architecture. **CTRNN is the focus for new development** — attractor-based memory, multi-timescale processing, oscillations.
 
 **Neural Network (`GENOME_TYPE = "neural"`, comparison baseline):**
 Feedforward 34->32->32->14. 2,638 parameters. Mutation: perturbation (0.03), reset (0.001), knockout (0.0005). Retained for comparison but not actively developed — evolves hyper-predation at long timescales that collapses population viability.
 
 ### Energy Model
-Photosynthesis (density-attenuated), chemical consumption, predation with ecological kill rewards (35% absorption, no flat bonus). Full cost table in `config.py`. Death from starvation, membrane failure, old age.
+Photosynthesis (density-attenuated), chemical consumption, predation with ecological kill rewards (35% absorption, no flat bonus). **Environmental predation**: gape-limited mortality sweep every 100 ticks — solo cells face 1% kill probability per sweep, pair cells 0.5%, cells with 2+ bonds immune. Full cost table in `config.py`. Death from starvation, membrane failure, old age, or environmental predation.
 
 ### Bonding
-Near-permanent bonds (decay 0.001/tick, reinforced at 0.03 when both cells fire bond). Auto-bond at division (incomplete cytokinesis, initial strength 0.1 — breaks in ~50 ticks unless reinforced). 30% lossy resource transfer. 4-channel bond signals per direction. Clusters up to 22 cells with mesh/chain/star topologies; 94% facing coordination in 3+ cell clusters.
+Near-permanent bonds (decay 0.001/tick, reinforced at 0.03 when both cells fire bond). Auto-bond at division (incomplete cytokinesis, initial strength 0.1 — breaks in ~50 ticks unless reinforced). 30% lossy resource transfer. 4-channel bond signals per direction. **Bond signal emission (v7.5):** CRN/CTRNN hidden chemicals 10-11 emit on bond signal channels when >0.5 (chem 10 → ch 0-1, chem 11 → ch 2-3). Partners sense via inputs 18-33. **Bond signal reception (v8.0):** incoming bond signals blended into hidden chemicals (8-11) at rate CRN_BOND_SIGNAL_BLEND=0.15. Channel h from all bonded partners is averaged and added to hidden chemical 8+h. Closes the full emit→relay→receive loop for CRN and CTRNN. **Bond-waste mechanics (v7.2):** waste equalization through bonds (20% of diff per tick per bond, strength-weighted), metabolic efficiency (bonded cells produce 25% less waste with 2+ bonds). Tick order: update_waste_exposure → bond equalization → apply_waste_toxicity. Clusters up to 33 cells observed at 200k (v7.4).
 
 ### Visualization
 Grid rendering, species coloring, chemical heatmaps, light overlay, stats display.
@@ -100,7 +103,8 @@ cybercell/
 ├── cell/
 │   ├── cell_state.py          <- Cell state fields (pos, energy, bonds, signals, etc.)
 │   ├── genome.py              <- Neural network genome. 34->32->32->14
-│   ├── crn_genome.py          <- CRN genome. 16 chemicals (3 zones), 16 reactions
+│   ├── crn_genome.py          <- CRN genome. 16 chemicals (3 zones), 24 reactions
+│   ├── ctrnn_genome.py        <- CTRNN genome. 16 neurons (3 zones), CfC dynamics
 │   ├── sensing.py             <- 34 sensory inputs with noise
 │   ├── actions.py             <- 14 action outputs
 │   ├── bonding.py             <- Bond formation, decay, lossy sharing, signal relay
@@ -117,6 +121,7 @@ cybercell/
 │   ├── logger.py              <- Periodic snapshots to disk (metrics, OEE, CRN, spatial)
 │   ├── oee_metrics.py         <- Open-ended evolution metrics (Bedau, MODES, MI)
 │   ├── crn_analysis.py        <- 9-panel CRN diagnostics + report
+│   ├── ctrnn_analysis.py      <- 9-panel CTRNN diagnostics + report
 │   ├── compare_runs.py        <- Side-by-side Neural vs CRN comparison
 │   ├── validate.py            <- Validation harness (13 checks for neural, 18 for CRN)
 │   ├── run_all.py             <- Unified CLI: runs all applicable analyses on a run
@@ -127,7 +132,9 @@ cybercell/
 │   └── burst_analysis.py      <- Frame-by-frame burst analysis
 └── tests/
     ├── conftest.py            <- Session-scoped ti.init() (fixes pytest double-init)
+    ├── test_bonding_waste.py  <- Bond-waste mechanics: equalization, efficiency, syntrophy, death tracking, bond signal reception
     ├── test_chemistry.py
+    ├── test_ctrnn.py          <- CTRNN: evaluation, bootstrap, mutation, hidden memory
     ├── test_energy.py
     ├── test_genome.py
     ├── test_lifecycle.py
@@ -163,21 +170,82 @@ C3 <- S_gradient_x     C7 <- waste (v7.1; was age)
 C12 -> eat    C14 -> divide
 C13 -> move   C15 -> attack
 ```
-Turns are handled separately via facing-aware gradient steering. Hidden chemicals 8-9 drive signal/bond via auxiliary thresholds.
+Turns are handled separately via facing-aware gradient steering. Hidden chemicals 8-9 drive signal/bond via auxiliary thresholds. **Hidden chemicals 10-11 emit bond signals** (v7.5): when >0.5, chemical 10 → bond signal channels 0-1, chemical 11 → channels 2-3. Sensed by bonded partners via sensory inputs 18-33.
 
-### Genome Layout (120 parameters)
-- **Reactions** (0-111): 16 reactions x 7 params (input_a, input_b, output, threshold_a, threshold_b, rate, decay)
-- **Action biases** (112-115): eat, move, divide, attack — reset to these values each tick
-- **Hidden decays** (116-119): per-chemical decay rates for hidden zone
+### Genome Layout (176 parameters)
+- **Reactions** (0-167): 24 reactions x 7 params (input_a, input_b, output, threshold_a, threshold_b, rate, decay)
+- **Action biases** (168-171): eat, move, divide, attack — reset to these values each tick
+- **Hidden decays** (172-175): per-chemical decay rates for hidden zone
+
+### Bootstrap Reactions (4)
+```
+R0: light > 0.2   → eat    (C0 → C12, rate=0.3)
+R1: energy > 0.3  → divide (C1 → C14, rate=0.4)
+R2: structure > 0.1 → move  (C2 → C13, rate=0.2)
+R3: waste > 0.3   → move   (C7 → C13, rate=0.25)  [v7.2]
+```
+Reactions 4-15: random with biased zone targeting. R3 enables waste-driven movement but only fires when waste exceeds toxicity threshold — mostly dormant in v7.2 since bond-waste mechanics keep waste below 0.3. **Reactions 16-23: silent slots** (v7.4) — wired with random inputs/outputs/thresholds but rate=0. Activated incrementally by mutation or duplication-divergence. Provides evolvable capacity without increasing initial mutation load.
 
 ### Key Design Decisions
 - **Attack was age-gated** (C7->C15 in v7.0): now waste-gated since C7 reads waste. Mapping cell_ahead->attack caused mass extinction.
-- **Move is structure-gated** (C2->C13): bootstrap rate=0.2 gives ~9% initial movement with sigmoid.
+- **Move is structure-gated** (C2->C13): bootstrap rate=0.2 gives ~9% initial movement with sigmoid. **Waste→move** (C7->C13, v7.2): bootstrap rate=0.25, provides 0-2.7% movement when waste is high.
 - **Sigmoid action firing** (gain=30, center=0.5): replaces hard threshold. P(fire) = sigmoid(30*(chem - 0.5)). At bias 0.3: P≈0.3%. At bias+reaction 0.6: P≈95%. Provides evolutionary gradient below threshold without wasteful spontaneous actions.
 - **Hidden basal production** (0.005/tick): steady-state floor at 0.25 (below 0.5 aux threshold). Keeps hidden chemicals positive and computationally useful. Reactions can push above 0.5 to activate signal/bond.
 - **Hidden decay 0.02/tick**: half-life ~35 ticks. Long-term memory, prevents runaway.
 - **Per-reaction decay restricted to sensory zone only** (0-7): action chemicals reset each tick, hidden has dedicated decay. Fixes bug where actions were decayed 3-5x per tick.
 - **Zone-aware clamping**: sensory/hidden [0, 5], action [-1, 5]. Prevents negative concentrations in sensory/hidden zones.
+
+---
+
+## 5b. CTRNN Genome Architecture (v8.0)
+
+The CTRNN uses Closed-form Continuous-time (CfC) dynamics — a computationally efficient approximation of continuous-time RNNs that supports attractor-based memory, multi-timescale processing, and oscillations.
+
+### CfC Update Rule
+
+```
+f_i = sigmoid(sum_j(w_ij * tanh(y_j)) + bias_i)
+y_i(t+1) = (y_i(t) + f_i * A_i) / (1 + 1/tau_i + f_i)
+```
+
+### 3-Zone Neuron Structure (16 neurons)
+
+| Zone | Indices | Role | tau range |
+|------|---------|------|-----------|
+| Sensory | 0-7 | Environment inputs, blended 50/50 with env | 0.2-0.5 (fast) |
+| Hidden | 8-11 | Memory, oscillators, gates | 1.0-3.0 (slow) |
+| Action | 12-15 | Drive behavioral outputs | 0.5-1.0 (moderate) |
+
+Same sensory mapping as CRN (light, energy, structure, gradients, cell_ahead, bonds, waste). Same action mapping (eat, move, divide, attack). Same auxiliary actions from hidden neurons (signal, bond, bond signals).
+
+### Genome Layout (188 parameters)
+
+| Block | Indices | Content |
+|-------|---------|---------|
+| Per-neuron | 0-175 | 16 × 11 (tau, bias, A, 4 recurrent weights, 4 target indices) |
+| Input gains | 176-183 | 8 sensory neuron input coupling strengths |
+| Action biases | 184-187 | eat=0.3, move=0.3, divide=0.2, attack=-0.3 |
+
+### Sparse Recurrence
+
+Each neuron connects to 4 others (target indices encoded as continuous values, converted to neuron index via `int(abs(val) * 16) % 16`). Rewiring mutations change targets. This matches CRN's reaction-slot model.
+
+### Bootstrap Circuit
+
+- Neuron 12 (eat) ← neuron 0 (light): strong positive weight
+- Neuron 14 (divide) ← neuron 1 (energy): positive weight
+- Neuron 13 (move) ← neuron 2 (structure) + neuron 7 (waste): positive weights
+- Action neuron biases = -2.0 (suppressed without input), action bias offsets match CRN
+
+### Key Design Decisions
+
+- **Sensory neurons: pure blend, no CfC.** CfC dynamics on sensory neurons created ~0.25 baseline regardless of input. Pure blend (like CRN) gives faithful environment tracking.
+- **Action neurons: feedforward readout, no CfC.** Persistent CfC state caused constant action firing (70% movement). Reset-each-tick readout matches CRN's action chemical behavior. Action biases added after readout to shift sigmoid operating point.
+- **Auxiliary action threshold 1.0 (not 0.5).** CfC hidden neurons reach steady-state ~0.85 from dynamics alone. Threshold 1.0 requires genuine recurrent drive for signal/bond emission.
+- **Action neuron init: zero non-bootstrap weights.** Random connections created positive bias pushing all actions above threshold. Bootstrap-only init lets evolution add connections incrementally.
+- **Neurons clamped to [-5, 5]**: prevents runaway activations.
+- **Mutation calibrated**: 0.013 per param x 188 params = 2.4 mutations/gen (matches CRN).
+- **Bond signal reception**: same mechanism as CRN — incoming bond signals blended into hidden neurons at rate 0.15.
 
 ---
 
@@ -196,20 +264,40 @@ All parameters in `config.py` — the single source of truth. Key non-obvious va
 | `LIGHT_ATTENUATION_K` | 0.02 | Extinction coeff: 82% at density 10, 67% at density 20. Reduced from 0.03 in v7.1 to compensate for waste pressure. |
 | `LIGHT_ATTENUATION_RADIUS` | 2 | 5x5-1=24 neighbor count for density |
 | `ATTACK_BIAS` | -0.3 | Initial sigmoid output ~0.43 — predation must be evolved |
+| `MAX_REACTIONS` | 24 | 4 bootstrap + 12 random + 8 silent (v7.4, was 16) |
+| `CRN_GENOME_SIZE` | 176 | 24×7+8 (v7.4, was 120) |
+| `CRN_MUTATION_RATE_PERTURB` | 0.014 | Scaled from 0.02 by 120/176 to hold ~2.4 mutations/gen |
 | `CRN_ACTION_GAIN` | 30.0 | Sigmoid steepness: <0.3% at bias, >95% when boosted by reactions |
 | `CRN_ACTION_CENTER` | 0.5 | Sigmoid midpoint matches old threshold |
 | `CRN_HIDDEN_BASAL` | 0.005 | Steady-state 0.25, below aux action threshold of 0.5 |
 | `CRN_SENSORY_BLEND` | 0.5 | 50% memory / 50% environment per tick |
+| `CRN_BOND_SIGNAL_BLEND` | 0.15 | Blend rate for incoming bond signals into hidden chemicals |
 | `DEPOSIT_RELOCATE_INTERVAL` | 25000 | Forces navigation; static deposits allow sessile strategies |
 | `MIGRATION_INTERVAL` | 200 | Continuous trickle (was 5000); Nm≈1.25 per generation |
 | `MIGRATION_COUNT` | 1 | Per-island per event; uniform random selection (was fitness-proportional) |
 | `ISLAND_ENV_VARIANCE` | 0.3 | ±30% parameter variance; more distinct islands |
 | `WASTE_ENABLED` | True | Metabolic waste from photosynthesis |
-| `WASTE_PRODUCTION_RATE` | 0.03 | Waste per unit energy gained. SS isolated ~0.26 (safe), cluster interior ~0.50 (above threshold). Tuned up from 0.01 in v7.1. |
+| `WASTE_PRODUCTION_RATE` | 0.05 | Waste per unit energy gained. Solo SS ~0.35+ (above threshold), bonded pair SS ~0.26 (safe). Tuned up from 0.03 in v7.2. |
 | `WASTE_DECAY_RATE` | 0.002 | Half-life ~350 ticks |
 | `WASTE_DIFFUSION_RATE` | 0.05 | 5% spreads per tick (same as signal) |
 | `WASTE_TOXICITY_THRESHOLD` | 0.3 | Isolated cells (0.26) safe. Cluster edges (~0.40) take damage. Lowered from 0.5 in v7.1. |
 | `WASTE_TOXICITY_RATE` | 0.2 | 4x increase from v7.1. Interior damage ~0.04 membrane/tick (~2500 ticks to die). |
+| `SYNTROPHY_ENABLED` | True | All cells passively convert waste→energy above threshold |
+| `SYNTROPHY_THRESHOLD` | 0.3 | Same as toxicity threshold — syntrophy activates where waste hurts |
+| `SYNTROPHY_RATE` | 0.02 | Energy per unit waste consumed (~0.001 energy/tick max) |
+| `SYNTROPHY_CONSUMPTION_RATE` | 0.05 | Max waste consumed per tick per cell |
+| `BOND_WASTE_EQUALIZATION` | True | Bonds redistribute waste exposure across cluster |
+| `BOND_WASTE_EQUALIZE_RATE` | 0.2 | Fraction of waste diff equalized per tick per bond (strength-weighted) |
+| `BOND_METABOLIC_EFFICIENCY` | True | Bonded cells produce less waste during photosynthesis |
+| `BOND_METABOLIC_EFFICIENCY_RATE` | 0.25 | Max waste reduction (25%) with 2+ bonds. Solo SS ~0.35+, bonded pair SS ~0.26. |
+| `PREDATION_ENABLED` | True | Gape-limited environmental predation active |
+| `PREDATION_INTERVAL` | 100 | Ticks between predation sweeps |
+| `PREDATION_SOLO_KILL_PROB` | 0.01 | Per-sweep kill prob for 0 bonds (~9.5% per 1000 ticks) |
+| `PREDATION_PAIR_KILL_PROB` | 0.005 | Per-sweep kill prob for 1 bond (~5% per 1000 ticks) |
+| `PREDATION_IMMUNE_BONDS` | 2 | Cells with >= this many bonds are immune |
+| `RESPAWN_ENERGY` | 80.0 | Higher than INITIAL_ENERGY (35) so respawned cells survive division + night cycle. Parent gets 36 energy after divide, daughter 24 — both survive a full night. |
+| `CTRNN_GENOME_SIZE` | 188 | 16x11 per-neuron + 8 input gains + 4 action biases |
+| `CTRNN_MUTATION_RATE_PERTURB` | 0.013 | ~2.4 mutations/gen (188x0.013) |
 
 ---
 
@@ -231,9 +319,10 @@ All parameters in `config.py` — the single source of truth. Key non-obvious va
 ### Data Flow
 
 Simulation produces `runs/<timestamp>/` with:
-- `metrics.jsonl` — population, energy, movement, attack, bond, light attenuation, zone breakdown, waste stats (every 1k ticks)
+- `metrics.jsonl` — population, energy, movement, attack, bond, light attenuation, zone breakdown, waste stats, **4-way death tracking** (starvation/age/waste/predation + zone×cause matrix), **cluster stats** (num_clusters, avg/max size, bonded_fraction), **division stats** (count, avg daughter dx/dy) (every 1k ticks)
 - `oee_metrics.jsonl` — Bedau activity, MODES, entropy, MI, bond density (every 1k ticks)
 - `crn_metrics.jsonl` — CRN-only: zone activations, biases, decays, reactions, zone flow (every 1k ticks)
+- `ctrnn_metrics.jsonl` — CTRNN-only: neuron activations, tau/bias/amp evolution, action biases (every 1k ticks)
 - `lineage.jsonl` — parent->child mutation events
 - `spatial/` — cell positions + bonds (every 10k ticks)
 - `genomes/` — full genome weights (every 50k ticks)
@@ -252,6 +341,7 @@ python analysis/run_all.py runs/20260319_205444 # specific run
 |--------|--------|-------------|
 | `study.py` | STUDY.md, evolution_report.png | Phase detection, rates, 8-panel dynamics (waste + zone panels added v7.1) |
 | `crn_analysis.py` | CRN_ANALYSIS.md, crn_evolution.png | 9-panel CRN diagnostics (zone activation, bias drift, reaction graph, zone flow) |
+| `ctrnn_analysis.py` | CTRNN_ANALYSIS.md, ctrnn_evolution.png | 9-panel CTRNN diagnostics (neuron activations, tau/bias/amp evolution, action patterns) |
 | `lineage_analysis.py` | LINEAGE_ANALYSIS.md, lineage_tree.png | Phylogenetic trees, selective sweeps, bias evolution (CRN-aware) |
 | `compare_runs.py` | comparison_*.png, report.md | Side-by-side run comparison (dynamics + OEE + CRN + environmental pressure) |
 | `spatial_analysis.py` | SPATIAL_ANALYSIS.md, spatial_*.png | Spatial distribution, zone occupation |
@@ -265,136 +355,345 @@ Validate output uses stable dirs (`validate_neural_10000t/`) not timestamped. Co
 
 ## 9. Empirical Findings
 
-Historical results (v5.0 baselines, v6.0 attenuation, v7.0 waste-too-mild) are archived in git history. This section covers the current v7.1 results.
+Historical results (v5.0 baselines, v6.0 attenuation, v7.0 waste-too-mild, v7.1 zone migration) are archived in git history.
 
-### Phase 3 Results: Tuned Waste + Waste Sensing (v7.1)
+### Phase 4 Results: Bonds Solve Waste (v7.2)
 
-**What changed:** WASTE_PRODUCTION_RATE 0.01→0.03. WASTE_TOXICITY_THRESHOLD 0.5→0.3. WASTE_TOXICITY_RATE 0.05→0.2. LIGHT_ATTENUATION_K 0.03→0.02. Sensory input[15] changed from age to waste concentration. CRN C7 reads waste automatically via `_SENSORY_MAP[7]=15`. Toxicity reads from read buffer (bug fix).
+**What changed:** Bond-waste equalization (waste shared across cluster). Metabolic efficiency (bonded cells produce 25% less waste). Syntrophy (waste→energy conversion). 4th bootstrap reaction (waste>0.3→move). Per-cell `cell_waste_exposure` field. 4-way death tracking (starvation/age/waste/predation × 3 zones). Cluster metrics (union-find). Division displacement tracking. Improved duplication-divergence mutation (prefers empty slots).
 
-### CRN 200k ticks — Waste-Driven Zone Migration (LANDMARK RESULT)
+**What was attempted and reverted:** MAX_REACTIONS 16→24 caused population collapse at 30k (mutation load: 176 params × 2% = 3.52 mutations/generation vs 2.4 with 120 params). Reverted to 16 reactions. Expansion deferred to v7.3 with calibrated mutation rates.
 
-**The most significant emergent behavior observed in the project.** CRN cells achieved full zone migration without evolving movement — waste created a death gradient that passively dispersed the population from the bright zone into dim and dark zones.
+### CRN 200k ticks — Bond-Waste Mechanics Drive Multicellularity
 
-**Zone migration trajectory:**
+**Bonding increased from v7.1 baseline.** Bond-waste mechanics create selective advantage for clustering: bonded cells produce less waste and share waste exposure across the cluster.
 
-| Tick | Pop | Bright | Dim | Dark | Avg X | Waste | Move |
-|------|-----|--------|-----|------|-------|-------|------|
-| 0 | 1015 | 100% | 0% | 0% | 85 | 0.00 | 40% |
-| 30k | 184 | 64% | 36% | 1% | 150 | 0.30 | 1.1% |
-| 70k | 258 | 59% | 29% | 12% | 191 | 0.29 | 0.4% |
-| 100k | 410 | 50% | 25% | 25% | 229 | 0.21 | 0.2% |
-| 130k | 280 | 28% | 24% | 48% | 301 | 0.08 | 0.4% |
-| 200k | 292 | **26%** | **48%** | **26%** | **255** | 0.07 | 0.0% |
+**200k trajectory:**
 
-**Mechanism — passive dispersal, not active movement:**
-1. Cells cluster in bright zone, produce waste (rate 0.03 per energy gained)
-2. Waste exceeds 0.3 threshold in dense areas (peak 0.58)
-3. Bright-zone cells take membrane damage and die
-4. Division places daughter cells at cluster edges, drifting rightward
-5. Over 200k ticks, population center of mass migrates from x=85 to x=255
-6. Dim/dark zone cells experience near-zero waste (0.046 avg) — survive longer
+| Tick | Pop | Bond% | MaxClust | Waste | Move | AvgX | Bright |
+|------|-----|-------|----------|-------|------|------|--------|
+| 0 | 1030 | 5.8% | 2 | 0.00 | 42% | 85 | 100% |
+| 20k | 347 | 0.6% | 2 | 0.10 | 0.6% | 137 | 99% |
+| 60k | 266 | 3.8% | 2 | 0.10 | 1.1% | 134 | 100% |
+| 80k | 338 | 6.5% | 5 | 0.09 | 1.5% | 136 | 97% |
+| 100k | 330 | 7.3% | 3 | 0.09 | 2.7% | 124 | 99% |
+| 120k | 212 | **9.4%** | 4 | 0.08 | 0.9% | 116 | 98% |
+| 140k | 191 | 7.9% | 3 | 0.07 | 1.6% | 105 | 99% |
+| 180k | 86 | 5.8% | 3 | 0.03 | 2.3% | 96 | 95% |
+| 200k | 170 | — | — | 0.02 | — | 86 | 96% |
 
-**CRN genome evolution:**
-- Eat bias: +0.30 → **+0.73** (maximizing energy extraction in low-light zones)
-- Divide bias: +0.20 → **+0.48** (aggressive reproduction under waste pressure)
-- Move bias: +0.30 → +0.21 (never evolved movement — confirms passive mechanism)
-- Reaction topology shifted from 12 sensory→action (direct) to multi-layer pipeline: 3 sensory→hidden + 2 hidden→hidden + 2 hidden→action
-- NOT-gates: 0% → **15.3%** inverted thresholds
-- 12.3/16 reactions active at 200k
+**50k run showed stronger bonding:** Peak bond fraction 25.6%, max cluster size 11. Stochastic variation between runs is significant.
 
-**Population:** Mean 274, stable with 2 respawn events. Far more viable than v7.0 (mean 176).
+**Death cause breakdown (v7.2, new data):**
+- Starvation: ~85% of all deaths (dominant cause)
+- Age: ~15% of all deaths
+- Waste: **0%** (waste at cells 0.09, below 0.3 threshold)
+- Predation: <0.1%
+- Zone deaths: 98%+ in bright zone (population stays concentrated)
 
-**This is niche construction through waste.** No intelligence in the rules — waste physics + natural selection produced zone colonization that was never hard-coded. The "bright zone as ecological trap" predicted by research.md was confirmed and broken by waste pressure alone.
+**Key differences from v7.1:**
 
-### Neural 175k ticks — Hyper-Predation Population Collapse
+| Metric | v7.1 CRN (200k) | v7.2 CRN (200k) | Change |
+|--------|-----------------|-----------------|--------|
+| **Bonding (peak)** | 8.1% | **9.4%** (200k) / **25.6%** (50k) | +16-216% |
+| **Max cluster size** | 2 | **5** | +150% |
+| Bright zone (final) | 26% | **96%** | Reversed |
+| Avg X (final) | 255 | 96 | No migration |
+| Waste at cells | 0.16 | **0.09** | -44% |
+| Movement (peak) | 0.0% | **2.7%** | New |
+| Population (mean) | 274 | ~250 (50-100k) | -9% |
+| Waste deaths | unknown | **0 (now measurable)** | New data |
+| Respawn events | 2 | ~8 (after 150k) | More |
 
-**Neural evolved territorial predators that destabilize the population — an evolutionary dead end.**
+**The fundamental trade-off:** Bond-waste mechanics reduce waste damage for bonded cells (increasing bonding from 8→9-25%) but ALSO reduce overall waste pressure (waste at cells 0.09 vs 0.16), which eliminates the death gradient that drove zone migration in v7.1. **Bonds solve waste — perhaps too well.** Addressed in v7.3 by increasing waste production and adding environmental predation.
 
-**Respawn-massacre cycle (starting ~100k ticks):**
+### Phase 5 Results: Dual Selective Pressure (v7.3)
 
-| Tick | Pop before | Attack % | Pop after |
-|------|-----------|----------|-----------|
-| 101k | 108 | 31% | 60 |
-| 131k | 148 | 30% | 55 |
-| 145k | 191 | 36% | 85 |
-| 156k | 186 | 39% | 72 |
-| 166k | 201 | **43%** | 70 |
+**What changed:** WASTE_PRODUCTION_RATE 0.03→0.05. Environmental predation: gape-limited mortality sweep every 100 ticks (solo 1%, pair 0.5%, 2+ bonds immune). Sentinel -2 for env predation death classification. study.py fix: deaths_by_attack→deaths_by_predation.
 
-Attack rate escalates over time (31% → 43%). Established cells immediately kill respawned naive cells. Population oscillates between ~50 (respawn threshold) and ~200 (post-respawn spike) every ~10k ticks.
+**What was attempted and reverted:** (1) PREDATION_SOLO_KILL_PROB=0.02 caused population collapse to 31 at 30k (too aggressive before bonding evolves). Reduced to 0.01. (2) WASTE_TOXICITY_THRESHOLD 0.3→0.15 caused population extinction at 27k — syntrophy at 0.15 consumes waste at exactly the toxicity threshold, preventing damage while combined starvation+predation collapses population. Reverted. At ~200 population density on 500x500 grid, waste doesn't accumulate enough to cross any reasonable threshold.
 
-**Late-run phase shift (150k+):**
+### CRN 200k — Environmental Predation Drives Multicellularity
 
-| Metric | 50-100k | 150-175k | Change |
-|--------|---------|----------|--------|
-| Population | 116 | 69 | -41% |
-| Movement | 23.3% | **7.2%** | -69% |
-| Attack | 1.8% | **5.2%** | +189% |
-| Avg energy | 29.8 | **54.9** | +84% |
+**Environmental predation creates strong clustering pressure.** Bonding peaked at 26.6% with max cluster size 19 — nearly 3x v7.2's peak (9.4%, cluster 5). Predation accounts for 9% of all deaths (5,049 total), creating continuous selective advantage for bonded cells.
 
-The remaining cells are territorial predators — high energy, low movement, elevated attack. They also migrated to dim zone (32% bright, 66% dim at 175k) by clearing the bright zone through predation.
+**200k trajectory:**
 
-**Decision: Focus on CRN.** Neural's hyper-predation is a population viability issue, not an interesting evolutionary strategy. CRN shows genuinely novel emergent behavior (waste-driven niche construction) with stable populations.
+| Tick | Pop | Bond% | MaxClust | Waste | Move | AvgX | Bright |
+|------|-----|-------|----------|-------|------|------|--------|
+| 0 | 1030 | 5.8% | 2 | 0.00 | 42% | 85 | 100% |
+| 20k | 293 | 0.7% | 2 | 0.10 | 0.7% | 135 | 100% |
+| 50k | 213 | 13.6% | 10 | 0.10 | 0.0% | 137 | 99% |
+| 80k | 232 | 10.8% | 12 | 0.10 | 1.7% | 136 | 99% |
+| 100k | 238 | 8.4% | 3 | 0.10 | 0.8% | 135 | 100% |
+| 106k | 139 | **26.6%** | **19** | 0.09 | — | — | — |
+| 120k | 131 | 4.6% | 2 | 0.09 | 4.6% | 137 | 99% |
+| 150k | 117 | 12.0% | 4 | 0.09 | 0.0% | 140 | 98% |
+| 180k | 108 | 5.6% | 3 | 0.02 | 0.0% | 110 | 96% |
+| 200k | 86 | 7.0% | 4 | 0.02 | 0.0% | 101 | 93% |
 
-### v7.1 Comparison Table
+**Death cause breakdown (v7.3, 200k):**
+- Starvation: 47,664 (84.7% — still dominant)
+- Predation: 5,049 (9.0% — significant new pressure from env predation)
+- Age: 3,583 (6.4%)
+- Waste: **0** (waste at cells ~0.10, below 0.3 threshold)
 
-| Metric | CRN (200k) | Neural (175k) |
-|--------|------------|---------------|
-| Population (mean) | **274** | 138 |
-| Bright zone (final) | 26% | 32% |
-| Dim zone (final) | **48%** | **66%** |
-| Movement (final) | 0.0% | 0.0% |
-| Attack (final) | 0.0% | 1.6% |
-| Bonding (mean) | 8.1% | 10.4% |
-| Respawn events | 2 | **8** |
-| Waste at cells (mean) | 0.16 | 0.34 |
-| MI (mean) | 0.0056 | **0.0111** |
-| Shannon (mean) | 5.49 | 8.03 |
-| Viable at 200k | **Yes** | No (death spiral) |
+**Key differences from v7.2:**
+
+| Metric | v7.2 CRN (200k) | v7.3 CRN (200k) | Change |
+|--------|-----------------|-----------------|--------|
+| **Bonding (peak)** | 9.4% | **26.6%** | +183% |
+| **Max cluster size** | 5 | **19** | +280% |
+| Predation deaths | 0 | **5,049 (9%)** | New pressure |
+| Waste at cells | 0.09 | **0.10** | +11% |
+| Waste deaths | 0 | 0 | Still below threshold |
+| Bright zone (final) | 96% | **93%** | Slight decrease |
+| Avg X (final) | 96 | 101 | No migration |
+| Population (10-100k mean) | ~250 | **234** | -6% |
+| Population (100-200k mean) | ~170 | **119** | -30% |
+| Movement (peak) | 2.7% | **4.6%** | +70% |
+
+**What worked:** Environmental predation creates direct selective advantage for bonding. Cells with 2+ bonds are immune to predation, driving bonding from 9.4% to 26.6% peak and cluster size from 5 to 19. This is the strongest multicellularity signal observed in CyberCell.
+
+**What didn't change:** Waste at cells stayed ~0.10 (below 0.3 threshold) despite WASTE_PRODUCTION_RATE increase to 0.05. At ~200 population on 500x500, density is too low for waste to accumulate. Lowering WASTE_TOXICITY_THRESHOLD to 0.15 was attempted and caused extinction (syntrophy consumes waste at threshold, preventing damage while combined pressure collapses population). Zone migration still absent (93% bright). **Waste as selective pressure requires higher population density** — deferred until CRN expansion enables larger carrying capacity, or until specialized waste zones are added.
+
+**Remaining issue:** Population declines in second half (234 mean first 100k, 119 mean second 100k) with respawn cycles after ~155k. Carrying capacity may be lower under predation pressure. Late-phase bonding (7% at 200k) suggests clusters don't persist long enough to dominate.
+
+### Phase 6 Results: Expanded CRN Evolvability (v7.4)
+
+**What changed:** MAX_REACTIONS 16→24 (8 silent slots, rate=0, wiring random). CRN_MUTATION_RATE_PERTURB 0.02→0.014 (calibrated by 120/176 to hold ~2.4 mutations/gen). CRN_GENOME_SIZE 120→176. Respawner updated to zero rate for reactions 16+ (matching init). study.py records_to_arrays fixed for missing keys when pop=0.
+
+**What was attempted and reverted:** CRN_MUTATION_RATE_REWIRE 0.01→0.007 and CRN_MUTATION_RATE_DELETE 0.005→0.003 (scaled by 16/24) caused early extinction at 26k. Reverted — structural mutations on silent slots are no-ops, so effective load on active reactions is unchanged.
+
+### CRN 200k — Expanded Reactions Improve Evolvability
+
+**24-reaction CRN outperforms 16-reaction across all multicellularity metrics.** Bonding peaked at 28.7% (vs 26.6%), max cluster reached 33 cells (vs 19), and movement evolved to 38.2% (vs 4.6%). Population was healthier in the first 100k (mean 268 vs 234). Silent reaction slots activated incrementally — 16/24 reactions active by 192k.
+
+**200k trajectory:**
+
+| Tick | Pop | Bond% | MaxClust | Waste | Move | AvgX | Bright |
+|------|-----|-------|----------|-------|------|------|--------|
+| 0 | 1031 | 6.0% | 2 | 0.00 | 42% | 84 | 100% |
+| 10k | 320 | 0.6% | 2 | 0.10 | 14.1% | 137 | 99% |
+| 20k | 339 | 4.4% | 4 | 0.10 | 15.0% | 136 | 99% |
+| 50k | 249 | 11.6% | 6 | 0.10 | 24.5% | 135 | 100% |
+| 70k | 267 | — | **33** | — | — | — | — |
+| 80k | 233 | 5.2% | 2 | 0.10 | **38.2%** | 135 | 100% |
+| 100k | 261 | 9.2% | 2 | 0.10 | 24.9% | 136 | 99% |
+| 111k | — | **28.7%** | 6 | — | — | — | — |
+| 120k | 139 | 8.6% | 3 | 0.08 | 7.9% | 138 | 94% |
+| 150k | 73 | 6.8% | 3 | 0.08 | 1.4% | 134 | 100% |
+| 192k | 3 | 0.0% | 0 | 0.00 | 0.0% | — | — |
+
+**Death cause breakdown (v7.4, 200k):**
+- Starvation: 45,726 (84.1%)
+- Predation: 5,112 (9.4%)
+- Age: 3,557 (6.5%)
+- Waste: 0 (0.0%)
+
+**Key differences from v7.3:**
+
+| Metric | v7.3 CRN (200k) | v7.4 CRN (200k) | Change |
+|--------|-----------------|-----------------|--------|
+| **Bonding (peak)** | 26.6% | **28.7%** | +8% |
+| **Max cluster size** | 19 | **33** | +74% |
+| **Movement (peak)** | 4.6% | **38.2%** | +730% |
+| **Active reactions** | ~12/16 | **16/24** | Slots activating |
+| **Mean pop 10-100k** | 234 | **268** | +15% |
+| Mean pop 100-200k | 119 | 91 | -24% |
+| Predation deaths | 5,049 (9.0%) | 5,112 (9.4%) | comparable |
+| Extinction | survived (pop 86) | extinct at 192k | 8k earlier |
+
+**What worked:** Expanded reaction capacity gives evolution more combinatorial space. Silent slots activate incrementally via mutation and duplication-divergence. Movement evolved to 38.2% — highest ever with CRN — suggesting extra reactions enable more complex sensorimotor circuits. Max cluster of 33 shows potential for larger multicellular structures.
+
+**What didn't change:** Waste at cells ~0.10 (0 waste deaths). Zone migration absent (99-100% bright through 100k). Late-phase population decline (issue #20) led to extinction at 192k.
+
+**Remaining issue:** Late-phase extinction continues (issue #20). Population declines from ~268 (10-100k mean) to extinction at 192k. v7.3 survived to 200k with pop 86 — the difference is likely stochastic variation rather than systematic.
+
+### v7.1 CRN Results (Historical — Waste-Driven Zone Migration)
+
+v7.1 achieved waste-driven zone migration (26% bright, 48% dim, 26% dark at 200k, avg X=255) through passive dispersal — the "landmark result." Mechanism: waste exceeded 0.3 toxicity in dense bright-zone clusters, killing interior cells and passively dispersing population rightward via daughter placement. Bonding declined under waste pressure (13.9%→8.1%). See git history for full v7.1 data.
+
+### Phase 7 Results: Bond Signals + Respawn Fix (v7.5)
+
+**What changed:** Hidden chemicals 10-11 emit bond signals when >0.5 (chem 10 → channels 0-1, chem 11 → channels 2-3). Respawned CRN cells get 4 bootstrap reactions matching init. RESPAWN_ENERGY=80 (was INITIAL_ENERGY=35). R1 bootstrap threshold kept at 0.3.
+
+**What was attempted and reverted:** (1) R1 divide threshold 0.3→0.5 caused immediate extinction — cells couldn't divide fast enough to offset deaths. (2) R1 threshold 0.3→0.4 also collapsed population. The threshold change shifts initial dynamics too drastically for seed 42. Higher RESPAWN_ENERGY is the correct fix — targets respawned cells only.
+
+### CRN 200k — Respawn Fix Prevents Late-Phase Extinction
+
+**Population survived to 200k** (v7.4 went extinct at 192k). Respawned cells with bootstrap reactions and energy 80 establish viable populations in late phase (pop 6-25 from 160k-200k).
+
+**200k trajectory:**
+
+| Tick | Pop | Bond% | MaxClust | Waste | Move | Notes |
+|------|-----|-------|----------|-------|------|-------|
+| 10k | 234 | 5.1% | 4 | 0.096 | 0% | |
+| 20k | 285 | 9.8% | 13 | 0.100 | 0% | Max cluster 39 at 18k |
+| 40k | 259 | 14.3% | 11 | 0.099 | 0% | |
+| 70k | 202 | 24.8% | 10 | 0.100 | 0% | |
+| 100k | 207 | 14.5% | 8 | 0.099 | 0% | |
+| 130k | 56 | 26.8% | 3 | 0.087 | 0% | |
+| 139k | ~80 | **69.6%** | — | — | — | Peak bonding |
+| 150k | 81 | 18.5% | 5 | 0.063 | 0% | |
+| 170k | 25 | 8.0% | 2 | 0.006 | 0% | Respawn cycles |
+| 200k | 22 | — | — | 0.001 | 0% | Alive (v7.4: extinct) |
+
+**Death cause breakdown (v7.5, 200k):**
+- Starvation: 47,836 (87.2%)
+- Predation: 4,119 (7.5%)
+- Age: 2,872 (5.2%)
+- Waste: 0 (0.0%)
+
+**Key differences from v7.4:**
+
+| Metric | v7.4 CRN (200k) | v7.5 CRN (200k) | Change |
+|--------|-----------------|-----------------|--------|
+| **Bonding (peak)** | 28.7% | **69.6%** | +142% |
+| **Max cluster size** | 33 | **39** | +18% |
+| **Survived 200k** | No (extinct 192k) | **Yes (pop 22)** | Fixed |
+| **Movement (peak)** | 38.2% | **0.0%** | Regression |
+| Pop mean (10-100k) | 268 | 240 | -10% |
+| Pop mean (150-200k) | extinct | **38** | Alive |
+
+**What worked:** RESPAWN_ENERGY=80 gives respawned cells enough buffer to survive division + night cycle. Bootstrap reactions ensure immediate viability (photosynthesis, division, movement). Population never reaches 0 for sustained periods. Bond fraction peaked at 69.6% — highest ever — possibly due to reduced competition at lower population densities creating more space for stable clusters.
+
+**What didn't change:** 0% waste deaths. Zone migration absent. Late-phase population decline still occurs (issue #20 mitigated, not solved). Movement at 0% — regression from v7.4's 38.2%, likely stochastic variation between seeds.
+
+**Remaining concern:** 0% movement in this run. v7.4 achieved 38.2% movement with the same CRN architecture. This is likely seed-dependent stochastic variation, not a systematic regression from bond signal or respawn changes. Multiple seeds needed to confirm.
+
+### Phase 8 Results: CTRNN Genome (v8.0)
+
+**What changed:** New genome type `GENOME_TYPE = "ctrnn"` with 16-neuron CfC dynamics (Closed-form Continuous-time). 3-zone architecture: 8 sensory (pure blend), 4 hidden (CfC with evolved tau), 4 action (feedforward readout). 188 parameters. Sparse recurrence (4 connections per neuron). Bootstrap circuits match CRN (eat<-light, divide<-energy, move<-structure+waste). CRN bond signal reception added (issue #9b).
+
+**Key design decisions during tuning:**
+- **Sensory neurons: pure blend, no CfC.** CfC dynamics on sensory neurons created ~0.25 baseline regardless of input, making action readouts unable to distinguish light from dark. Pure blend (like CRN) gives faithful environment tracking.
+- **Action neurons: feedforward readout, no CfC.** Persistent CfC state caused actions to fire constantly (70% movement). Reset-each-tick feedforward readout matches CRN's action chemical behavior.
+- **Auxiliary action threshold 1.0 (not 0.5).** CfC hidden neurons reach steady-state ~0.85 from dynamics alone. Signal emission (0.1 energy/tick) at default state was the primary cause of mass starvation. Threshold 1.0 requires genuine recurrent drive.
+- **Divide threshold at energy ~35.** Action bias -0.35 with w=2.5 creates sigmoid threshold: P=0.1% at E=25, 5% at E=35, 95% at E=45. Balances reproduction rate against night-survival energy buffer.
+- **Action neuron init: zero non-bootstrap weights.** Random connections on action neurons created positive bias pushing all actions above threshold. Bootstrap-only init lets evolution add connections incrementally.
+
+### CTRNN 867k — First Long Run
+
+**CTRNN achieved zone migration and record multicellularity in its first long run.** Max cluster 77 cells (CRN record: 39). Zone migration from 100% bright to 15% bright. Hidden neurons differentiated multi-timescale dynamics (tau spread 0.005 to 0.776).
+
+**867k trajectory:**
+
+| Tick | Pop | Bond% | MaxClust | Move% | BrightPct | Energy |
+|------|-----|-------|----------|-------|-----------|--------|
+| 0 | 1000 | 0.0% | 0 | 6.1% | 100% | 34.9 |
+| 50k | 775 | 10.3% | 6 | 10.3% | 83% | 111.8 |
+| 100k | 554 | 10.6% | 5 | 4.2% | 87% | 130.4 |
+| 200k | 326 | 18.1% | 15 | 9.5% | 62% | 61.2 |
+| 350k | 265 | 6.0% | 4 | 9.4% | 31% | 78.2 |
+| 500k | 722 | 8.3% | 4 | 18.1% | 15% | 79.9 |
+| 650k | 770 | 11.2% | 11 | 16.4% | 28% | 79.1 |
+| 766k | 608 | 21.9% | **77** | — | — | — |
+| 867k | 189 | 2.1% | 2 | 4.2% | 33% | 85.8 |
+
+**Hidden neuron tau differentiation (evolved):**
+
+| Neuron | Init tau | Final tau | Change | Interpretation |
+|--------|----------|-----------|--------|---------------|
+| H0 (signal) | 1.50 | 0.93 | -0.56 | Faster — reactive signaling |
+| H1 (bond) | 1.50 | 1.66 | +0.16 | Slower — stable bonding memory |
+| H2 (bond sig 0-1) | 1.50 | 1.19 | -0.31 | Moderate — signal relay |
+| H3 (bond sig 2-3) | 1.50 | 1.63 | +0.13 | Slower — signal persistence |
+
+**Action bias evolution:**
+
+| Action | Init bias | Final bias | Change | Interpretation |
+|--------|-----------|------------|--------|---------------|
+| Eat | +0.30 | +0.63 | +0.33 | Stronger eating drive (2x) |
+| Move | +0.30 | +0.16 | -0.14 | More selective movement |
+| Divide | -0.35 | -0.53 | -0.18 | More conservative division |
+| Attack | -0.30 | -0.37 | -0.07 | Stayed suppressed |
+
+**Death cause breakdown (867k):**
+- Starvation: 541,970 (86.8%)
+- Predation: 50,670 (8.1%)
+- Age: 31,923 (5.1%)
+- Waste: 0 (0.0%)
+
+**Key differences from CRN v7.5 (200k):**
+
+| Metric | CRN v7.5 (200k) | CTRNN v8.0 (867k) | Notes |
+|--------|-----------------|-------------------|-------|
+| **Max cluster** | 39 | **77** | +97% (record) |
+| **Bonding peak** | 69.6% | **27.7%** | Lower peak but sustained |
+| **Zone migration** | No (stayed bright) | **Yes (15% bright)** | Emergent |
+| **Movement peak** | 0.0% | **29.0%** | Evolved navigation |
+| **Tau differentiation** | N/A | **0.93-1.75** | Multi-timescale |
+| Population (mean) | ~100 | **463** | Higher carrying capacity |
+| Survived | 200k (barely) | **867k** | Robust |
+
+**What the CTRNN enables that CRN cannot:** Multi-timescale memory through evolved time constants. Hidden neuron H0 evolved a fast tau (0.93) for reactive signaling while H3 evolved a slow tau (1.63) for persistent memory. This temporal differentiation is unique to CTRNN — CRN hidden chemicals all share the same decay rate (0.02/tick). The CfC dynamics also enable attractor-based computation where hidden neuron state represents a continuous "belief" about the environment, not just a chemical concentration.
+
+### Neural Results (Historical — Hyper-Predation Collapse)
+
+Neural genome evolves 30-43% attack by 100k ticks, creating respawn-massacre cycles. Population oscillates 50-200 indefinitely. Not actively developed — retained as comparison baseline only.
 
 ---
 
 ## 10. Known Issues — Priority Order
 
-### Fixed in v5.0–v7.0
-Issues 1-6, 12 fixed in prior versions. See git history for details.
+### Fixed in v5.0–v7.1
+Issues 1-6, 7c, 11-14 fixed in prior versions. See git history for details.
 
-### Fixed in v7.1
+### Fixed in v7.2
 | # | Issue | Fix Applied |
 |---|-------|-------------|
-| 7c | CRN movement 0%, no waste sensing | Waste sensing added (input[15]=waste, CRN C7 reads automatically). Waste params tuned (production 3x, threshold 0.3, toxicity 4x). CRN still 0% movement but achieves zone migration through passive waste-driven dispersal. |
-| 11 | Population viability at 200k | LIGHT_ATTENUATION_K reduced 0.03→0.02. CRN now mean 274 pop at 200k (was 176). |
-| 13 | Waste params too mild | WASTE_PRODUCTION_RATE 0.01→0.03, threshold 0.5→0.3. 67-71% of cells now above toxicity. Peak waste 0.58. |
-| 14 | Tests failing (22/28) | Taichi double-init in pytest fixed via conftest.py. Stale function signatures updated. 28/28 passing. |
+| 16 | CRN can't discover waste→move | 4th bootstrap reaction added (waste>0.3→move, C7→C13, rate=0.25). Provides 0-2.7% movement at 200k. |
+| 17 | Bonding declines under waste | Bond-waste equalization (20% diff/tick/bond), metabolic efficiency (25% less waste with 2+ bonds), syntrophy (waste→energy above threshold). Bonding increased: peak 9.4% at 200k (was 8.1%), 25.6% peak at 50k. Max cluster size 5 (was 2). |
+| — | Death causes unknown | 4-way death tracking: starvation/age/waste/predation × 3 zones. Revealed that 85% of deaths are starvation, 15% age, 0% waste in v7.2. |
+| — | No cluster metrics | Union-find cluster stats: num_clusters, avg/max size, bonded_fraction. Division displacement tracking (avg daughter dx/dy). |
+
+### Fixed in v7.3
+| # | Issue | Fix Applied |
+|---|-------|-------------|
+| 8b | CRN predation zero | Environmental predation added: gape-limited mortality sweep every 100 ticks. Solo cells 2% kill/sweep, pair cells 0.5%, cells with 2+ bonds immune. Sentinel -2 in last_attacker for death classification. |
+| 18 | Bond-waste reduces zone migration | WASTE_PRODUCTION_RATE 0.03→0.05 restores waste pressure on solo cells (SS ~0.35+ vs 0.26 for bonded). Combined with environmental predation, creates dual-pressure regime: waste rewards dispersal, predation rewards clustering. |
+| — | study.py stale key | Fixed deaths_by_attack→deaths_by_predation in compute_rates(). |
+
+### Fixed in v7.4
+| # | Issue | Fix Applied |
+|---|-------|-------------|
+| 19 | 24-reaction expansion causes collapse | MAX_REACTIONS 16→24 with CRN_MUTATION_RATE_PERTURB 0.02→0.014 (scaled by 120/176 to hold ~2.4 mutations/gen). Reactions 16-23 initialized as silent slots (rate=0, wiring random). |
+
+### Fixed in v7.5
+| # | Issue | Fix Applied |
+|---|-------|-------------|
+| 9 | Bond signals unused | Hidden chemicals 10-11 emit bond signals when >0.5: chem 10 → channels 0,1; chem 11 → channels 2,3. Pipeline: CRN output → `process_bond_signal_output()` → `process_bond_signal_relay()` → partner's sensory inputs 18-33. **Note:** CRN sensory zone (8 inputs) does not yet map bond signal inputs — neural genome can read them, CRN reception requires future sensory expansion. |
+| 20 | Respawned CRN cells non-viable | Respawner now gives CRN cells 4 bootstrap reactions matching init + RESPAWN_ENERGY=80 (2.3x INITIAL_ENERGY). Bootstrap reactions ensure photosynthesis/division; higher energy prevents starvation after division during night. R1 threshold change (0.3→0.4/0.5) was attempted but destabilized initial dynamics — reverted. |
+
+### Fixed in v8.0
+| # | Issue | Fix Applied |
+|---|-------|-------------|
+| 9b | CRN can't receive bond signals | Incoming bond signals blended into hidden chemicals 8-11 at rate CRN_BOND_SIGNAL_BLEND=0.15. Each hidden chemical h receives average of channel h across all bonded partners. Full emit→relay→receive loop now works for CRN and CTRNN. |
 
 ### Remaining Issues
 | # | Issue | Root Cause | Fix Direction |
 |---|-------|------------|---------------|
-| 8b | CRN predation zero | CRN attack bias -0.3, no bootstrap reaction for predation. | Not urgent — waste-driven dispersal is more interesting than predation for CRN. May add gape-limited predators as external pressure (see research.md). |
-| 9 | Bond signals unused | CRN maps only 8 actions; bond signal outputs (10-13) are zeroed. | Needs waste-transport-through-bonds or other multicellularity mechanism first. |
-| 15 | Neural hyper-predation | Neural evolves 30-43% attack by 100k ticks, creating respawn-massacre cycles. Population oscillates 50-200, no sustained evolution. | Not fixing — focusing on CRN. Neural retained as baseline only. |
-| 16 | CRN can't discover waste→move | 16 reactions with 3 bootstrap reactions. 13 random reactions haven't wired waste→move in 200k ticks. Search space too large. | Consider adding 4th bootstrap reaction (waste→move), or expand to 24-32 reactions for more neutral network connectivity. See research.md for duplication-divergence mutation approach. |
-| 17 | Bonding declines under waste | Waste punishes clustering. Bonding dropped: CRN 13.9%→8.1%, neural 15.9%→10.4%. Waste may select against multicellularity. | Make bonds solve waste: waste transport through bonds, metabolic efficiency for bonded cells (25-35% less waste). See research.md syntrophy/channel architecture sections. |
+| 15 | Neural hyper-predation | Neural evolves 30-43% attack by 100k. | Not fixing — focusing on CRN. |
+| 20 | Late-phase population decline | Population drops below 50 after ~100-130k in 200k runs. Respawn with bootstrap reactions + RESPAWN_ENERGY=80 prevents extinction (pop 6-25 at 160-200k) but doesn't restore carrying capacity. | May be inherent (genetic drift at Ne~200, mutation accumulation). Higher RESPAWN_COUNT or adaptive predation at low population could help. |
 
 ---
 
 ## 11. Future Roadmap (Do Not Implement Yet)
 
-### Next Priority: Make Bonds Solve Waste (drives multicellularity)
-Waste currently punishes clustering — bonds must become the *solution* to waste, not its victim. Three mechanisms from research.md (implement in this order):
-1. **Waste transport through bonds.** Bonds distribute waste across the cluster network. Each bonded cell experiences `total_cluster_waste / cluster_size` instead of local waste. Creates increasing returns to cluster connectivity.
-2. **Metabolic efficiency for bonded cells.** Clusters produce 25-35% less waste per cell than solo cells. Reflects real thermodynamic efficiency of cooperative metabolism.
-3. **Waste as food (syntrophy).** Some cells metabolize waste for energy. Creates obligate mutualism — the strongest path to stable multicellularity. Cheater-resistant because waste removal benefits the consumer directly.
+### Completed: Waste Tuning + Environmental Predation (v7.3)
+WASTE_PRODUCTION_RATE 0.03→0.05. Environmental predation (solo 1%/sweep, pair 0.5%, 2+ bonds immune, every 100 ticks). Result: bonding 26.6% peak (vs 9.4%), max cluster 19 (vs 5), predation 9% of deaths. Waste increase had minimal effect (0.10 at cells, 0 waste deaths) — predation is the dominant clustering force.
 
-### Then: Expand CRN Evolvability
-- Expand genomes to 24-32 reactions (more neutral network connectivity for innovation).
-- Duplication-divergence mutation (biology's primary mechanism for new functions).
-- Seed 2-3 stepping-stone reactions (waste→signal, signal→move) as discoverable intermediates.
-- Consider behavioral diversity pressure (reward novel behavioral profiles alongside fitness).
+### Completed: Expand CRN Evolvability (v7.4)
+- MAX_REACTIONS 16→24, CRN_MUTATION_RATE_PERTURB 0.02→0.014 (120/176 scaling to hold ~2.4 mutations/gen).
+- Reactions 16-23: silent slots (rate=0, wiring random). Activated by mutation or duplication-divergence.
+- Duplication-divergence prefers empty slots — 8 new silent slots provide targets.
+- Consider behavioral diversity pressure (reward novel behavioral profiles alongside fitness) — deferred.
 
-### Then: Add Predation as Complementary Force
+### Then: Self-Regulating Predator Cells
+- Evolve from environmental predation to cell-on-cell predation (Lotka-Volterra dynamics).
 - Gape-limited predators that cannot consume clusters above 4 cells.
-- Self-regulating predator population (Lotka-Volterra: reproduce on kills, die from starvation).
-- Waste rewards dispersal, predation rewards clustering — organisms that solve both simultaneously occupy a novel fitness peak.
+- Self-regulating predator population: reproduce on kills, die from starvation.
+- Environmental predation (v7.3) can be phased out as evolved predation takes over.
 
 ### Later: Richer Environment
 - Mosaic of 4-6 qualitatively different zones with gradient corridors.
@@ -424,11 +723,11 @@ Chemotaxis (30-45% movement), multiple strategies, stable carrying capacity.
 ### Stage 3 — Ecological Complexity: ACHIEVED (waste-driven)
 CRN achieved waste-driven zone migration — niche construction through metabolic byproducts. 26% bright, 48% dim, 26% dark at 200k ticks. Population center migrated from x=85 to x=255. Waste creates genuine density-dependent selection pressure (67-71% of cells above toxicity threshold). This is emergent ecological dynamics without programmed behavior.
 
-### Stage 4 — Functional Multicellularity: BLOCKED
-Bonding *decreased* under waste pressure (CRN 13.9%→8.1%) because waste punishes clustering. **Bonds must become the solution to waste** — waste transport through bonds, metabolic efficiency for clusters, syntrophy. This is the immediate next priority. See research.md for biological mechanisms.
+### Stage 4 — Functional Multicellularity: PROGRESSING
+v7.4 expanded CRN (24 reactions) achieves strongest multicellularity metrics: 28.7% peak bonding, max cluster 33 cells (vs 26.6%/19 in v7.3, 9.4%/5 in v7.2). Movement evolved to 38.2% — highest ever with CRN. 16/24 reaction slots active, with silent slots activating incrementally. **However**, clusters still don't persist — bonding fluctuates rather than monotonically increasing. Next: investigate cluster fragmentation (issue #9 bond signals, or longer bond reinforcement).
 
 ### Stage 5 — Sustained OEE: PROGRESSING
-CRN reaction topology still evolving at 200k — shifted from direct sensory→action to multi-layer sensory→hidden→action pipeline. NOT-gates at 15.3%. Eat bias evolved from +0.30 to +0.73 adapting to dim/dark zone life. Population stable (mean 274, no death spiral). However, MI (0.0056) is lower than neural — CRN substrate needs expanded evolvability.
+CRN reaction topology actively evolving at 200k with 16/24 slots in use. Population mean 268 (10-100k), declining to 91 (100-200k) with extinction at 192k (issue #20). Environmental predation adds 9.4% mortality pressure, keeping selection active. Silent reaction slots provide evolvable capacity for more complex circuits — movement reaching 38.2% suggests richer sensorimotor computation.
 
 ### Stage 6 — Distributed Computation: FUTURE
 Requires multicellularity to stabilize first.
@@ -450,9 +749,9 @@ Requires multicellularity to stabilize first.
 
 ## 14. Testing
 
-**Unit tests (28 tests, ~3s):** Run `python -m pytest tests/ -v` or just start the simulation — `main.py` runs preflight tests automatically (skip with `--skip-tests`). Tests use a shared `conftest.py` for session-scoped `ti.init()` — never call `ti.init()` in individual test files (causes field corruption).
+**Unit tests (39 tests, ~4s):** Run `python -m pytest tests/ -v` or just start the simulation — `main.py` runs preflight tests automatically (skip with `--skip-tests`). Tests use a shared `conftest.py` for session-scoped `ti.init()` — never call `ti.init()` in individual test files (causes field corruption). `test_bonding_waste.py` (7 tests: waste equalization, metabolic efficiency, syntrophy, death cause classification, environmental predation bond immunity, predation death sentinel classification, bond signal emission + reception). `test_ctrnn.py` (4 tests: evaluation produces outputs, bootstrap eat fires in light, mutation changes genome, hidden neurons retain memory).
 
-**Validation harness (15-20 checks, 1-5 min):** Run `PYTHONPATH=. python validate.py --ticks 30000 --genome crn` after significant changes. Tests population stability, bond dynamics, gradient noise, archipelago, predation, diversity, energy balance, cluster analysis, waste pressure, plus CRN-specific checks (hidden zone activation, reaction diversification).
+**Validation harness (15-20 checks, 1-5 min):** Run `PYTHONPATH=. python validate.py --ticks 30000 --genome crn` (or `--genome ctrnn`) after significant changes. Tests population stability, bond dynamics, gradient noise, archipelago, 4-way death tracking, diversity, energy balance, cluster analysis, waste pressure, plus genome-specific checks (CRN: hidden zone activation, reaction diversification; CTRNN: hidden neuron activity, tau diversity, movement). CRN 30k: 21/21 passing (pop=524, 17/24 active reactions). Neural 10k: 15/15 passing.
 
 Every subsystem must be testable in isolation: conservation laws, determinism, boundary conditions, edge cases.
 
@@ -477,11 +776,10 @@ Every subsystem must be testable in isolation: conservation laws, determinism, b
 
 ## Summary for Claude Code
 
-1. **v7.1 state:** Waste is a real selective pressure (67-71% of cells above toxicity). CRN achieved waste-driven zone migration at 200k (26% bright, 48% dim, 26% dark). Neural evolves hyper-predation and collapses — focus all development on CRN. Neural code retained as comparison baseline — never delete it.
-2. **Immediate priority:** Make bonds solve the waste problem. Waste currently punishes clustering, which blocks multicellularity. Three mechanisms (in order): waste transport through bonds, metabolic efficiency for bonded cells, waste-as-food (syntrophy). See research.md for biological precedents.
-3. **Secondary priority:** Expand CRN evolvability. Current 16 reactions can't discover waste→move. Expand to 24-32 reactions, add duplication-divergence mutation, seed 2-3 stepping-stone reactions. See research.md Section 3.
-4. **Later priority:** Add gape-limited predators as complementary pressure. Waste rewards dispersal, predation rewards clustering — conflicting pressures drive innovation. See research.md Section 5.
-5. Keep modules under 300 lines.
-6. Run `python -m pytest tests/` after changes (28 tests, ~3s). Run `PYTHONPATH=. python validate.py --ticks 30000 --genome crn` for validation. Run `PYTHONPATH=. python analysis/run_all.py` for full analysis. Preflight tests run automatically on `main.py` start.
-7. Config values in `config.py` are the source of truth — this document may lag behind.
-8. Design question: "Does this create pressure for complex behavior, or can a simple strategy still win?" New corollary from v7.1: "Does this make clustering the *solution* to the problem, not its victim?"
+1. **v8.0 state:** Three genome types: CRN (24 reactions, 176 params), CTRNN (16 CfC neurons, 188 params), Neural (baseline). Bond signal reception fixed (issue #9b). CRN and CTRNN both support full emit→relay→receive bond signal loop. Neural code retained as comparison baseline — never delete it.
+2. **Immediate priority:** Compare CTRNN vs CRN on matched 200k runs. Fix lineage analysis for CTRNN genomes. Run multi-seed CTRNN validation for robustness.
+3. **Secondary priority:** Self-regulating predator cells (Lotka-Volterra). Current environmental predation is a stepping stone.
+4. Keep modules under 350 lines.
+5. Run `python -m pytest tests/` after changes (39 tests, ~4s). Run `PYTHONPATH=. python validate.py --ticks 30000 --genome crn` (or `--genome ctrnn`) for validation. Run `PYTHONPATH=. python analysis/run_all.py` for full analysis. Preflight tests run automatically on `main.py` start.
+6. Config values in `config.py` are the source of truth — this document may lag behind.
+7. Design question: "Does this create pressure for complex behavior, or can a simple strategy still win?" v7.1 corollary: "Does this make clustering the *solution* to the problem, not its victim?" v7.3 corollary: "Do the dual pressures (waste + predation) create a fitness peak that requires both dispersal AND clustering to reach?"

@@ -11,7 +11,8 @@ from cell.cell_state import (
     cell_alive, cell_x, cell_y, cell_energy, cell_structure, cell_repmat,
     cell_signal, cell_membrane, cell_age, cell_genome_id, cell_facing,
     cell_bonds, cell_bond_strength, cell_bond_signal_out, cell_bond_signal_in,
-    cell_last_attacker, grid_cell_id, free_slots, free_slot_count, cell_count,
+    cell_last_attacker, cell_waste_exposure,
+    grid_cell_id, free_slots, free_slot_count, cell_count,
 )
 from cell.genome import (
     genome_weights, genome_ref_count, genome_count,
@@ -46,6 +47,7 @@ def save_checkpoint(path: str, tick: int, current_buffer: int, mutation_rng_stat
         cell_bond_signal_out=cell_bond_signal_out.to_numpy(),
         cell_bond_signal_in=cell_bond_signal_in.to_numpy(),
         cell_last_attacker=cell_last_attacker.to_numpy(),
+        cell_waste_exposure=cell_waste_exposure.to_numpy(),
         grid_cell_id=grid_cell_id.to_numpy(),
         free_slots=free_slots.to_numpy(),
         free_slot_count=free_slot_count[None],
@@ -74,6 +76,11 @@ def save_checkpoint(path: str, tick: int, current_buffer: int, mutation_rng_stat
         from cell.crn_genome import crn_weights, crn_chemicals
         data["crn_weights"] = crn_weights.to_numpy()
         data["crn_chemicals"] = crn_chemicals.to_numpy()
+    # CTRNN state
+    if GENOME_TYPE == "ctrnn":
+        from cell.ctrnn_genome import ctrnn_weights, ctrnn_neurons
+        data["ctrnn_weights"] = ctrnn_weights.to_numpy()
+        data["ctrnn_neurons"] = ctrnn_neurons.to_numpy()
     np.savez_compressed(path, **data)
 
 
@@ -103,6 +110,8 @@ def load_checkpoint(path: str) -> dict:
         cell_bond_signal_in.from_numpy(data["cell_bond_signal_in"])
     if "cell_last_attacker" in data:
         cell_last_attacker.from_numpy(data["cell_last_attacker"])
+    if "cell_waste_exposure" in data:
+        cell_waste_exposure.from_numpy(data["cell_waste_exposure"])
     grid_cell_id.from_numpy(data["grid_cell_id"])
     free_slots.from_numpy(data["free_slots"])
     free_slot_count[None] = int(data["free_slot_count"])
@@ -148,6 +157,27 @@ def load_checkpoint(path: str) -> dict:
                 crn_chemicals.from_numpy(padded)
             else:
                 crn_chemicals.from_numpy(saved_c)
+
+    # CTRNN state (if present in checkpoint)
+    if "ctrnn_weights" in data:
+        from cell.ctrnn_genome import ctrnn_weights, ctrnn_neurons
+        from config import CTRNN_GENOME_SIZE, CTRNN_NUM_NEURONS
+        saved_w = data["ctrnn_weights"]
+        if saved_w.shape[1] < CTRNN_GENOME_SIZE:
+            padded = np.zeros((MAX_GENOMES, CTRNN_GENOME_SIZE), dtype=np.float32)
+            padded[:, :saved_w.shape[1]] = saved_w
+            ctrnn_weights.from_numpy(padded)
+        else:
+            ctrnn_weights.from_numpy(saved_w)
+        if "ctrnn_neurons" in data:
+            saved_n = data["ctrnn_neurons"]
+            if saved_n.shape[1] < CTRNN_NUM_NEURONS:
+                padded = np.zeros((MAX_CELLS, CTRNN_NUM_NEURONS),
+                                  dtype=np.float32)
+                padded[:, :saved_n.shape[1]] = saved_n
+                ctrnn_neurons.from_numpy(padded)
+            else:
+                ctrnn_neurons.from_numpy(saved_n)
 
     return {
         "tick": int(data["tick"]),

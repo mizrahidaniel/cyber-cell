@@ -37,7 +37,7 @@ def run_validation(ticks: int, genome_type: str = "neural",
     from cell.genome import (
         genome_count, action_outputs, sensory_inputs, genome_ref_count,
     )
-    from cell.lifecycle import deaths_by_attack, deaths_by_starvation
+    from cell.lifecycle import deaths_by_starvation, deaths_by_age, deaths_by_waste, deaths_by_predation, reset_death_counters
     from world.chemistry import get_env_S, get_env_R
 
     engine = SimulationEngine(headless=True, backend="cuda", auto_switch=False)
@@ -51,8 +51,10 @@ def run_validation(ticks: int, genome_type: str = "neural",
     bond_strength_samples = []
     bond_signal_nonzero_count = 0
     bond_signal_total_checks = 0
-    attack_deaths_total = 0
+    predation_deaths_total = 0
     starvation_deaths_total = 0
+    waste_deaths_total = 0
+    age_deaths_total = 0
     kill_reward_detected = False
     gradient_noise_variance_samples = []
     move_fraction_samples = []
@@ -65,6 +67,8 @@ def run_validation(ticks: int, genome_type: str = "neural",
     max_waste_samples = []
     # CRN-specific accumulators
     hidden_zone_samples = []
+    # CTRNN-specific accumulators
+    ctrnn_hidden_samples = []
 
     sample_interval = max(1, ticks // 100)  # ~100 samples
 
@@ -161,15 +165,27 @@ def run_validation(ticks: int, genome_type: str = "neural",
                     hidden_zone_samples.append(
                         float(alive_chems[:, 8:12].mean()))
 
+                # CTRNN-specific: hidden neuron activation
+                if genome_type == "ctrnn":
+                    from cell.ctrnn_genome import ctrnn_neurons
+                    from config import MAX_CELLS, CTRNN_NUM_SENSORY, CTRNN_NUM_HIDDEN
+                    neurons_np = ctrnn_neurons.to_numpy()[:MAX_CELLS]
+                    alive_neurons = neurons_np[alive_mask]
+                    ns = CTRNN_NUM_SENSORY
+                    nh = CTRNN_NUM_HIDDEN
+                    ctrnn_hidden_samples.append(
+                        float(alive_neurons[:, ns:ns + nh].mean()))
+
             else:
                 energy_history.append(0.0)
                 bond_count_history.append(0.0)
 
             # Death tracking
-            attack_deaths_total += deaths_by_attack[None]
+            predation_deaths_total += deaths_by_predation[None]
             starvation_deaths_total += deaths_by_starvation[None]
-            deaths_by_attack[None] = 0
-            deaths_by_starvation[None] = 0
+            waste_deaths_total += deaths_by_waste[None]
+            age_deaths_total += deaths_by_age[None]
+            reset_death_counters()
 
             # Kill reward: check if any attacker has high energy
             attacker_np = cell_last_attacker.to_numpy()
@@ -241,6 +257,19 @@ def run_validation(ticks: int, genome_type: str = "neural",
 
     cluster_sizes = [len(v) for v in clusters.values()]
 
+    # CTRNN-specific: tau range
+    ctrnn_tau_range = (0.0, 0.0)
+    if genome_type == "ctrnn":
+        from cell.ctrnn_genome import ctrnn_weights as _cw
+        from config import CTRNN_NUM_NEURONS, CTRNN_PARAMS_PER_NEURON
+        refs = genome_ref_count.to_numpy()
+        if refs.max() > 0:
+            dom_gid = int(np.argmax(refs))
+            w = _cw.to_numpy()
+            taus = [abs(w[dom_gid, n * CTRNN_PARAMS_PER_NEURON])
+                    for n in range(CTRNN_NUM_NEURONS)]
+            ctrnn_tau_range = (min(taus), max(taus))
+
     # CRN-specific: dominant genome active reaction count
     crn_dominant_active_reactions = 0
     if genome_type == "crn":
@@ -269,8 +298,10 @@ def run_validation(ticks: int, genome_type: str = "neural",
         "gradient_noise_variance": gradient_noise_variance_samples,
         "move_fraction_samples": move_fraction_samples,
         "attack_fraction_samples": attack_fraction_samples,
-        "attack_deaths": attack_deaths_total,
+        "predation_deaths": predation_deaths_total,
         "starvation_deaths": starvation_deaths_total,
+        "waste_deaths": waste_deaths_total,
+        "age_deaths": age_deaths_total,
         "kill_reward_detected": kill_reward_detected,
         "final_pop": final_pop,
         "quadrant_pops": quadrant_pops,
@@ -282,6 +313,8 @@ def run_validation(ticks: int, genome_type: str = "neural",
         "max_waste_samples": max_waste_samples,
         "hidden_zone_samples": hidden_zone_samples,
         "crn_dominant_active_reactions": crn_dominant_active_reactions,
+        "ctrnn_hidden_samples": ctrnn_hidden_samples,
+        "ctrnn_tau_range": ctrnn_tau_range,
     }
 
 
@@ -369,13 +402,16 @@ def check_results(results: dict) -> list[tuple[str, bool, str]]:
             detail = f"low pop ({total}), quadrants: {qpops}"
         checks.append(("Archipelago: cells in multiple quadrants (10)", passed, detail))
 
-    # 7. Predation (Step 11)
-    attack_deaths = results["attack_deaths"]
+    # 7. Death tracking
+    pred_deaths = results.get("predation_deaths", results.get("attack_deaths", 0))
+    waste_deaths = results.get("waste_deaths", 0)
     passed = True  # Predation may not evolve in short runs, that's OK
-    detail = f"attack deaths: {attack_deaths}, starvation deaths: {results['starvation_deaths']}"
+    detail = (f"predation: {pred_deaths}, waste: {waste_deaths}, "
+              f"age: {results.get('age_deaths', 0)}, "
+              f"starvation: {results['starvation_deaths']}")
     if results["kill_reward_detected"]:
         detail += " [kill rewards detected]"
-    checks.append(("Predation system active (11)", passed, detail))
+    checks.append(("Death tracking active (11)", passed, detail))
 
     # 8. Genome diversity
     genomes = results["genome_history"]
@@ -456,6 +492,14 @@ def check_results(results: dict) -> list[tuple[str, bool, str]]:
         detail = f"avg waste at cells (late)={avg_late_waste:.4f} (target >0.05)"
         checks.append(("Waste creates pressure", passed, detail))
 
+    # 14. Environmental predation check
+    import config as _cfg3
+    if getattr(_cfg3, 'PREDATION_ENABLED', False):
+        pred_deaths = results.get("predation_deaths", 0)
+        passed = pred_deaths > 0
+        detail = f"predation deaths={pred_deaths} (target >0)"
+        checks.append(("Environmental predation active", passed, detail))
+
     # CRN-specific checks
     if results["genome_type"] == "crn":
         # CRN population target (lower with waste + attenuation combined pressure)
@@ -510,6 +554,55 @@ def check_results(results: dict) -> list[tuple[str, bool, str]]:
         passed = dom_active >= 5
         detail = f"dominant genome has {dom_active} active reactions (target >=5)"
         checks.append(("CRN: Reactions diversified", passed, detail))
+
+    # CTRNN-specific checks
+    if results["genome_type"] == "ctrnn":
+        # CTRNN population target
+        import config as _cfg
+        pop_target = 50 if getattr(_cfg, 'LIGHT_ATTENUATION_ENABLED', False) else 200
+        passed = final_pop > pop_target
+        detail = f"final_pop={final_pop} (target >{pop_target})"
+        checks.append((f"CTRNN: Population > {pop_target}", passed, detail))
+
+        # CTRNN movement
+        move_fracs = results.get("move_fraction_samples", [])
+        if len(move_fracs) > 3:
+            window = max(1, len(move_fracs) // 5)
+            early_avg = np.mean(move_fracs[:window])
+            overall_avg = np.mean(move_fracs)
+            passed = early_avg > 0.05
+            detail = (f"early avg={early_avg:.3f}, overall={overall_avg:.3f} "
+                      f"(target: early >0.05)")
+        elif move_fracs:
+            avg_move = np.mean(move_fracs)
+            passed = avg_move > 0.05
+            detail = f"avg={avg_move:.3f} (few samples)"
+        else:
+            passed = True
+            detail = "no samples"
+        checks.append(("CTRNN: Movement circuit works", passed, detail))
+
+        # CTRNN: Hidden neurons active
+        hidden_samples = results.get("ctrnn_hidden_samples", [])
+        if hidden_samples:
+            peak_hidden = max(abs(v) for v in hidden_samples)
+            passed = peak_hidden > 0.01
+            detail = f"peak |hidden| mean={peak_hidden:.4f} (target >0.01)"
+        else:
+            passed = True
+            detail = "no samples"
+        checks.append(("CTRNN: Hidden neurons active", passed, detail))
+
+        # CTRNN: Tau diversity
+        tau_range = results.get("ctrnn_tau_range", (0.0, 0.0))
+        tau_span = tau_range[1] - tau_range[0]
+        if final_pop == 0:
+            passed = False
+            detail = f"no cells alive to measure tau"
+        else:
+            passed = tau_span > 0.1
+            detail = f"tau range [{tau_range[0]:.2f}, {tau_range[1]:.2f}] span={tau_span:.2f}"
+        checks.append(("CTRNN: Tau diversity", passed, detail))
 
     return checks
 
@@ -634,7 +727,8 @@ def main():
     parser = argparse.ArgumentParser(description="CyberCell validation harness")
     parser.add_argument("--ticks", type=int, default=10000,
                        help="Number of ticks to simulate (default: 10000)")
-    parser.add_argument("--genome", choices=["neural", "crn"], default="neural",
+    parser.add_argument("--genome", choices=["neural", "crn", "ctrnn"],
+                       default="neural",
                        help="Genome type (default: neural)")
     parser.add_argument("--no-archipelago", action="store_true",
                        help="Disable archipelago")

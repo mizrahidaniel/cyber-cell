@@ -11,6 +11,7 @@ from analysis.metrics import (
     get_predation_stats, get_light_attenuation_stats, get_zone_stats,
     get_waste_stats, get_spatial_snapshot, get_genome_weight_snapshot,
     get_burst_spatial_snapshot, get_crn_snapshot,
+    get_cluster_stats, get_division_stats,
 )
 from config import (
     SPATIAL_SNAPSHOT_INTERVAL, BURST_SNAPSHOT_INTERVAL,
@@ -58,6 +59,12 @@ class SimulationLogger:
             self.crn_path = os.path.join(self.log_dir, "crn_metrics.jsonl")
             self._crn_file = open(self.crn_path, "w")
 
+        # CTRNN metrics
+        self._ctrnn_file = None
+        if GENOME_TYPE == "ctrnn":
+            self.ctrnn_path = os.path.join(self.log_dir, "ctrnn_metrics.jsonl")
+            self._ctrnn_file = open(self.ctrnn_path, "w")
+
         # Burst snapshot state machine
         self._burst_active = False
         self._burst_start_tick = -1
@@ -74,6 +81,8 @@ class SimulationLogger:
         light_stats = get_light_attenuation_stats()
         zone_stats = get_zone_stats()
         waste_stats = get_waste_stats()
+        cluster_stats = get_cluster_stats()
+        division_stats = get_division_stats()
 
         record = {
             "tick": tick,
@@ -84,6 +93,8 @@ class SimulationLogger:
             **light_stats,
             **zone_stats,
             **waste_stats,
+            **cluster_stats,
+            **division_stats,
         }
 
         self._file.write(json.dumps(record) + "\n")
@@ -97,6 +108,16 @@ class SimulationLogger:
                 self._crn_file.write(
                     json.dumps(crn_snap, default=_np_serializer) + "\n")
                 self._crn_file.flush()
+
+        # CTRNN metrics
+        if self._ctrnn_file is not None:
+            from analysis.metrics import get_ctrnn_snapshot
+            ctrnn_snap = get_ctrnn_snapshot()
+            if ctrnn_snap is not None:
+                ctrnn_snap["tick"] = tick
+                self._ctrnn_file.write(
+                    json.dumps(ctrnn_snap, default=_np_serializer) + "\n")
+                self._ctrnn_file.flush()
 
         # Save spatial snapshot at lower frequency
         if tick % SPATIAL_SNAPSHOT_INTERVAL == 0:
@@ -162,3 +183,5 @@ class SimulationLogger:
         self._oee_file.close()
         if self._crn_file is not None:
             self._crn_file.close()
+        if self._ctrnn_file is not None:
+            self._ctrnn_file.close()

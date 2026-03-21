@@ -68,6 +68,7 @@ def main():
     has = {
         "metrics": os.path.isfile(os.path.join(run_dir, "metrics.jsonl")),
         "crn": os.path.isfile(os.path.join(run_dir, "crn_metrics.jsonl")),
+        "ctrnn": os.path.isfile(os.path.join(run_dir, "ctrnn_metrics.jsonl")),
         "lineage": os.path.isfile(os.path.join(run_dir, "lineage.jsonl")),
         "spatial": os.path.isdir(os.path.join(run_dir, "spatial")),
         "burst": bool(glob.glob(os.path.join(run_dir, "burst", "burst_*"))),
@@ -82,6 +83,7 @@ def main():
     scripts = [
         ("Study",    "analysis/study.py",            "metrics"),
         ("CRN",      "analysis/crn_analysis.py",     "crn"),
+        ("CTRNN",    "analysis/ctrnn_analysis.py",   "ctrnn"),
         ("Lineage",  "analysis/lineage_analysis.py",  "lineage"),
         ("Spatial",  "analysis/spatial_analysis.py",  "spatial"),
         ("Bonding",  "analysis/bonding_analysis.py",  "spatial"),
